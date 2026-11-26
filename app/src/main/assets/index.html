@@ -482,7 +482,7 @@ try {
         const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
         async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));const data=await r.json();if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Ошибка сервера '+r.status);}return data;}
         function setCloudPlan(p,token){plan=p;cloudToken=token||'';try{sessionStorage.setItem('solune-cloud-session',cloudToken)}catch(e){};if(p==='free'&&selectedModel==='opal')selectedModel='marble';if(p==='free'&&!permitted(task,skill)){task='chat';skill='';}save('marble15-plan',p);persist();updateControls();}
-        async function syncCloudPlan(){try{cloudUsage=await cloudJSON('/v1/usage');setCloudPlan(cloudUsage.plan,cloudToken);}catch(e){if(!cloudToken)setCloudPlan('free','');}}
+        async function syncCloudPlan(){try{let session=await cloudJSON('/v1/session',{method:'POST'});setCloudPlan(session.plan,session.token);cloudUsage=await cloudJSON('/v1/usage');}catch(e){if(!cloudToken)setCloudPlan('free','');}}
         let settings = Object.assign({ theme: read('marble15-theme', 'dark'), haptic: true, compact: false, reducedMotion: false, fullChat: false, font: 'default', keepAwake: false, notifyDone: false, language: 'ru' }, read('marble15-settings', {}));
         let api = read('marble15-api', { url: '', model: '' });
         let draft = read('marble15-draft', '');
@@ -559,7 +559,7 @@ try {
         function setDrawer(open) { $('drawer').classList.toggle('open', open); $('drawer').inert = !open; $('drawerScrim').classList.toggle('open', open && innerWidth < 940); $('menuBtn').setAttribute('aria-expanded', String(open)); }
         function openSheet(title, build) { hideSkills(); $('sheet').classList.toggle('settings-page', ['Настройки', 'Тарифы', 'Использование'].includes(title)); $('sheet').inert = false; $('sheetTitle').textContent = title; const body = $('sheetBody'); body.replaceChildren(); if (build)
             build(body); $('overlay').classList.add('open'); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false'); haptic(); }
-        function closeSheet() { $('overlay').classList.remove('open'); $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); $('sheet').inert = true; }
+        function closeSheet() { const frame=$('sheetBody').querySelector('.html-preview');if(frame)frame.remove(); $('overlay').classList.remove('open'); $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); $('sheet').inert = true; }
         function togglePreview(src,label='Предпросмотр'){const img=$('previewImage');img.onerror=()=>toast('Не удалось отобразить изображение');img.src=src;$('previewLabel').textContent=label;$('previewModal').classList.add('open');}
         function closePreview() { $('previewModal').classList.remove('open');$('previewImage').removeAttribute('src'); }
         function newEl(tag, cls, html) { const n = document.createElement(tag); if (cls)
@@ -714,11 +714,12 @@ try {
         catch (_a) {
             toast('Не удалось скопировать');
         } ta.remove(); }
-        function download(content, name, type = 'text/plain') { const u = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1200); }
+        function saveBlob(blob,name){if(window.SoluneNative){if(blob.size>4000000){toast('Файл слишком большой');return;}const r=new FileReader();r.onload=()=>{window.SoluneNative.postMessage(JSON.stringify({type:'saveFile',name,mime:blob.type||'application/octet-stream',base64:String(r.result).split(',')[1]}));};r.onerror=()=>toast('Не удалось подготовить файл');r.readAsDataURL(blob);return;}const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1200);}
+        function download(content,name,type='text/plain'){saveBlob(new Blob([content],{type}),name);}
         function svgToPng(svg, name = 'marble-art.png') { const img = new Image(); img.onerror = () => toast('Не удалось открыть SVG'); img.onload = () => { const canvas = document.createElement('canvas'); const scale = Math.min(1, 2048 / Math.max(img.naturalWidth || 1024, img.naturalHeight || 768)); canvas.width = Math.max(1, Math.round((img.naturalWidth || 1024) * scale)); canvas.height = Math.max(1, Math.round((img.naturalHeight || 768) * scale)); const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); canvas.toBlob(blob => { if (!blob) {
             toast('Не удалось создать PNG');
             return;
-        } const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1200); }, 'image/png'); }; img.src = svgEncode(svg); }
+        } saveBlob(blob,name); }, 'image/png'); }; img.src = svgEncode(svg); }
         function imageCard(svg, demo = false) { const card = newEl('div', 'image-card'); const frame = newEl('div', 'image-frame'); const img = new Image(); img.src = svgEncode(svg); img.alt = 'SVG'; frame.append(img); const ov = newEl('div', 'gen-overlay', icon('image') + '<span>' + (demo ? 'демо SVG' : 'SVG результат') + '</span>'); frame.append(ov); const bar = newEl('div', 'image-bar'); bar.innerHTML = `<span>${demo ? 'демо' : 'marble imagine'} · ${Math.round(svg.length / 10) / 100} KB</span>`; const acts = newEl('div', 'image-actions'); acts.append(action('play', 'Открыть', () => togglePreview(svgEncode(svg), 'SVG-предпросмотр')), action('download', 'Скачать SVG', () => download(svg, 'marble-image.svg', 'image/svg+xml')), action('image', 'Скачать PNG', () => svgToPng(svg))); bar.append(acts); card.append(frame, bar); return card; }
         function renderAnswer(node, content, taskType, complete = true, demo = false) {
             node.replaceChildren();
@@ -886,7 +887,7 @@ try {
                 lib.append(newEl('h2', '', 'Артефакты'));
                 const g = newEl('div', 'library-grid');
                 let count = 0;
-                activeArtifacts().images.forEach(item => { const wrap = newEl('div'); wrap.append(imageCard(item.svg, item.demo)); wrap.append(newEl('div', 'meta-time', `${item.chat} · ${formatTime(item.ts)}`)); g.append(wrap); count++; });
+                activeArtifacts().images.forEach(item => { const wrap = newEl('div'); wrap.append(imageCard(item.svg, item.demo)); wrap.append(newEl('div', 'meta-time', `${esc(item.chat)} · ${formatTime(item.ts)}`)); g.append(wrap); count++; });
                 if (!count)
                     g.append(newEl('div', 'empty-note', 'Здесь появятся изображения, созданные Marble.'));
                 lib.append(g);
@@ -988,6 +989,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             lines.forEach(consume);
         } consume(buffer); return text; }
         async function runCloud(messages,max,refresh,taskType,chosen){
+            if(!cloudToken)await syncCloudPlan();
             const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:selectedModel,messages,max_tokens:max,stream:true,task:chosen==='deep'?'deep':taskType,depth:chosen==='instant'?'low':chosen==='deep'?'high':depth}),signal:controller.signal});
             if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401)setCloudPlan('free','');throw Error(typeof d.detail==='string'?d.detail:'Ошибка облака '+r.status);}
             if(!r.body)throw Error('Поток ответа недоступен');
@@ -1152,13 +1154,13 @@ function reset(){pause();n=0;time.textContent='0.0'}
         }
         function openCloudPlans(){
             openSheet('Тарифы',body=>{
-                body.append(newEl('p','helper','Бесплатные тестовые тарифы. Квота общая для сервера; Pro и Dev активируются паролем.'));
+                body.append(newEl('p','helper','Бесплатные тестовые тарифы. Лимиты каждой сессии и общая квота сервера; Pro и Dev активируются паролем.'));
                 for(const [p,f] of [['free','30%'],['pro','60%'],['dev','100%']]){
                     const c=newEl('div','plan-card'+(p===plan?' selected':''));c.append(newEl('h3','',PLANS[p].name+' · '+f),newEl('p','helper',p==='free'?'Paper, Marble, SVG и быстрый режим':'Все модели, Code и /deep'));
                     const input=document.createElement('input');input.type='password';input.placeholder='Пароль тарифа';input.autocomplete='off';input.className='plan-password';
                     if(p!=='free'&&p!==plan)c.append(input);
                     const b=newEl('button','plan-action',p===plan?'Текущий тариф':'Активировать');b.disabled=p===plan;
-                    b.onclick=async()=>{if(busy){toast('Сначала завершите ответ');return;}b.disabled=true;try{const d=await cloudJSON('/v1/unlock',{method:'POST',body:JSON.stringify({plan:p,password:input.value})});input.value='';setCloudPlan(d.plan,d.token);render();openCloudPlans();toast('Тариф активирован');}catch(e){toast(e.message);b.disabled=false;}};c.append(b);body.append(c);
+                    b.onclick=async()=>{if(busy){toast('Сначала завершите ответ');return;}b.disabled=true;try{if(!cloudToken)await syncCloudPlan();const d=await cloudJSON('/v1/unlock',{method:'POST',body:JSON.stringify({plan:p,password:input.value})});input.value='';setCloudPlan(d.plan,d.token);render();openCloudPlans();toast('Тариф активирован');}catch(e){toast(e.message);b.disabled=false;}};c.append(b);body.append(c);
                 }
                 const u=newEl('button','card-btn','Использование');u.onclick=openCloudUsage;body.append(u);
             });
