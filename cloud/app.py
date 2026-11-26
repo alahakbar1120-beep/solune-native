@@ -98,11 +98,11 @@ def identity_answer(q, text):
     t=text.strip().lower().rstrip("?!., ")
     name=PROFILE_NAMES[q.model]
     # Only exact identity questions; never overwrite an unrelated answer or a provenance request.
-    if t in ("who are you","what model are you","what is your name","which model are you","кто ты","какая ты модель","как тебя зовут","ты какая модель","что ты за модель","хто ти","яка ти модель"):
-        if re.search(r"[а-яё]",t): return "Я — "+name+"."
+    if t in ("who are you","what model are you","what is your name","which model are you","кто ты","какая ты модель","как тебя зовут","ты какая модель","что ты за модель","ты кто","как ты называешься","какая у тебя модель","какой ты модели","хто ти","яка ти модель"):
+        if re.search(r"[а-яёіїєґ]",t): return "Я — "+name+"."
         if re.search(r"[іїєґ]",t): return "Я — "+name+"."
         return "I'm "+name+"."
-    if t in ("what are you based on","what is your base model","are you gpt-4","are you gpt 4","на чем ты основан","на чём ты основан","на какой модели ты основан","ты gpt-4","ты гпт 4"):
+    if t in ("what are you based on","what is your base model","are you gpt-4","are you gpt 4","на чем ты основан","на чём ты основан","на какой модели ты основан","ты gpt-4","ты гпт 4","ты gpt 4","ты гпт-4"):
         if re.search(r"[а-яё]",t): return name+" — профиль Solune, использующий "+MODELS[q.model]+". Это не GPT-4 и не отдельно обученная модель Solune."
         return name+" is a Solune profile powered by "+MODELS[q.model]+", not GPT-4 or independently trained Solune weights."
     return None
@@ -144,6 +144,7 @@ def call_upstream(model,identity,plan,messages,budget,effort,stream=True,search=
     row=reserve(model,identity,plan,messages,budget)
     # Qwen supports none; GPT-OSS supports low, medium, high.
     payload={"model":MODELS[model],"messages":messages,"max_completion_tokens":budget,"stream":stream,"reasoning_effort":effort,"temperature":0.6}
+    if model=="marble":payload["reasoning_format"]="hidden"
     if search:
         payload.update(tools=[{"type":"browser_search"}],tool_choice="required",stream=False)
     upstream=None
