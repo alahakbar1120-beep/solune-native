@@ -21,23 +21,23 @@ ledger=collections.deque()
 attempts=collections.deque()
 status={i:{"configured":bool(k),"state":"not_checked" if k else "missing","models":{}} for i,k in enumerate(KEYS)}
 active=next((i for i,k in enumerate(KEYS) if k),0)
-def sign(plan):
-    s=f"{plan}.{int(time.time())+43200}.{secrets.token_hex(8)}"
+def sign(plan, identity=None):
+    s=f"{plan}.{int(time.time())+43200}.{identity or secrets.token_hex(8)}"
     return s+"."+hmac.new(SIGN,s.encode(),hashlib.sha256).hexdigest()
-def tier(req):
+def principal(req):
     token=req.headers.get("Authorization","").removeprefix("Bearer ")
-    if not token: return "free"
+    if not token: return ("free","guest")
     try:
         p,exp,nonce,sig=token.split(".")
         base=".".join((p,exp,nonce))
-        if p in FRACTION and int(exp)>time.time() and hmac.compare_digest(sig,hmac.new(SIGN,base.encode(),hashlib.sha256).hexdigest()): return p
+        if p in FRACTION and int(exp)>time.time() and hmac.compare_digest(sig,hmac.new(SIGN,base.encode(),hashlib.sha256).hexdigest()): return p,nonce
     except (ValueError,TypeError): pass
     raise HTTPException(401,"Сессия истекла. Повторно активируйте тариф.")
 def prune():
     now=time.time()
     while ledger and ledger[0]["at"]<now-86400: ledger.popleft()
-def totals(model):
-    rows=[r for r in ledger if r["model"]==model]
+def totals(model, identity=None):
+    rows=[r for r in ledger if r["model"]==model and (identity is None or r.get("identity")==identity)]
     return sum(r["tokens"] for r in rows),len(rows)
 class Unlock(BaseModel):
     plan:str
@@ -54,9 +54,17 @@ def index():
     return FileResponse(Path(__file__).with_name("index.html"),headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"})
 @app.get("/health")
 def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS)}
+@app.post("/v1/session")
+def session(req:Request):
+    if req.headers.get("Authorization"):
+        p,identity=principal(req)
+        return {"plan":p,"token":sign(p,identity)}
+    return {"plan":"free","token":sign("free")}
 @app.post("/v1/unlock")
-def unlock(q:Unlock):
-    if q.plan=="free": return {"plan":"free","token":""}
+def unlock(q:Unlock,req:Request):
+    _,identity=principal(req)
+    if identity=="guest": identity=secrets.token_hex(8)
+    if q.plan=="free": return {"plan":"free","token":sign("free",identity)}
     with lock:
         now=time.time()
         while attempts and attempts[0]<now-60: attempts.popleft()
@@ -64,16 +72,16 @@ def unlock(q:Unlock):
         attempts.append(now)
     expected=PASSWORDS.get(q.plan,"")
     if not expected or not hmac.compare_digest(q.password.encode(),expected.encode()): raise HTTPException(403,"Неверный пароль или тариф не настроен.")
-    return {"plan":q.plan,"token":sign(q.plan)}
+    return {"plan":q.plan,"token":sign(q.plan,identity)}
 @app.get("/v1/usage")
 def usage(req:Request):
-    p=tier(req)
+    p,identity=principal(req)
     with lock:
         prune()
-        models={m:{"tokens_used":totals(m)[0],"requests_used":totals(m)[1],"tokens_limit":int(DAY_TOKENS*FRACTION[p]),"requests_limit":int(DAY_REQUESTS*FRACTION[p])} for m in MODELS}
+        models={m:{"tokens_used":totals(m,identity)[0],"requests_used":totals(m,identity)[1],"tokens_limit":int(DAY_TOKENS*FRACTION[p]),"requests_limit":int(DAY_REQUESTS*FRACTION[p])} for m in MODELS}
         keys=[{"slot":i+1,"active":i==active,**v} for i,v in status.items()]
         # Copy under lock; no credentials ever included.
-        return json.loads(json.dumps({"plan":p,"models":models,"keys":keys,"window":"rolling_24h","note":"Локальный учёт сервера с момента запуска. Заголовки Groq: запросы в сутки, токены в минуту. Квоты организаций не суммируются."}))
+        return json.loads(json.dumps({"plan":p,"models":models,"keys":keys,"window":"rolling_24h","note":"Учёт по сессии с момента запуска сервера; при перезапуске статистика сбрасывается. Заголовки Groq: запросы в сутки, токены в минуту. Квоты организаций не суммируются."}))
 def rate_headers(r,slot,model):
     fields=("limit-requests","remaining-requests","reset-requests","limit-tokens","remaining-tokens","reset-tokens")
     with lock:
@@ -82,7 +90,7 @@ def rate_headers(r,slot,model):
 @app.post("/v1/chat/completions")
 def chat(q:Chat, req:Request):
     global active
-    plan=tier(req)
+    plan,identity=principal(req)
     if q.model not in MODELS or q.task not in ("chat","code","image","deep"): raise HTTPException(400,"Неизвестная модель или режим.")
     if plan=="free" and (q.model=="opal" or q.task in ("code","deep")): raise HTTPException(403,"Нужен Pro или Dev.")
     msgs=[]
@@ -93,15 +101,17 @@ def chat(q:Chat, req:Request):
     max_tokens=min(q.max_tokens,4096 if plan!="free" else 1536)
     # Conservative reservation, reconciled with actual provider usage.
     reserved=sum(len(m["content"].encode("utf-8"))+24 for m in msgs)+max_tokens+128
-    if not slots.acquire(blocking=False): raise HTTPException(429,"Сервер занят, повторите позже.")
+    if not slots.acquire(blocking=False): raise HTTPException(429,"Сервер занят. Попробуйте позже.")
     entry=None
     upstream=None
     try:
         with lock:
             prune()
-            used,count=totals(q.model)
+            used,count=totals(q.model,identity)
+            global_used,global_count=totals(q.model)
             if used+reserved>DAY_TOKENS*FRACTION[plan] or count>=DAY_REQUESTS*FRACTION[plan]: raise HTTPException(429,"Дневной лимит тарифа исчерпан.")
-            entry={"at":time.time(),"model":q.model,"tokens":reserved}
+            if global_used+reserved>DAY_TOKENS or global_count>=DAY_REQUESTS: raise HTTPException(429,"Сервер занят. Попробуйте позже.")
+            entry={"at":time.time(),"model":q.model,"tokens":reserved,"identity":identity}
             ledger.append(entry)
             order=[active]+[i for i in range(len(KEYS)) if i!=active]
         payload={"model":MODELS[q.model],"messages":msgs,"max_completion_tokens":max_tokens,"stream":True}
@@ -122,7 +132,7 @@ def chat(q:Chat, req:Request):
         if upstream is None: raise HTTPException(503,"Нет рабочего ключа Groq. Проверьте секреты.")
         if upstream.status_code==429:
             retry=upstream.headers.get("retry-after","")
-            raise HTTPException(429,"Лимит Groq исчерпан. Повторите позже.",headers={"Retry-After":retry} if retry else None)
+            raise HTTPException(429,"Сервер занят. Попробуйте позже.",headers={"Retry-After":retry} if retry else None)
         if not upstream.ok: raise HTTPException(502,f"Groq отклонил запрос (HTTP {upstream.status_code}).")
     except BaseException:
         if upstream is not None: upstream.close()
@@ -136,7 +146,9 @@ def chat(q:Chat, req:Request):
             for raw in upstream.iter_lines(chunk_size=64):
                 if not raw.startswith(b"data:"): continue
                 raw=raw[5:].strip()
-                if raw==b"[DONE]": break
+                if raw==b"[DONE]":
+                    yield "data: [DONE]\n\n"
+                    return
                 try: item=json.loads(raw)
                 except ValueError: continue
                 u=item.get("usage") or (item.get("x_groq") or {}).get("usage")
@@ -148,7 +160,7 @@ def chat(q:Chat, req:Request):
                     if text: yield "data: "+json.dumps({"choices":[{"delta":{"content":text}}]},ensure_ascii=False)+"\n\n"
                     if choices[0].get("finish_reason")=="length":
                         yield "data: "+json.dumps({"truncated":True})+"\n\n"
-            yield "data: [DONE]\n\n"
+            yield "data: "+json.dumps({"error":"Поток ответа завершился неожиданно."},ensure_ascii=False)+"\n\n"
         except requests.RequestException:
             yield "data: "+json.dumps({"error":"Соединение с Groq прервано."},ensure_ascii=False)+"\n\n"
         finally:
