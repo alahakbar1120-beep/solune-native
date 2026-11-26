@@ -428,9 +428,10 @@ try {
         const svgEncode = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
         const depthNames = { low: 'Fast', medium: 'Balanced', high: 'Deep' };
         const viewNames = { chat: 'Chat', projects: 'Projects', code: 'Code', artifacts: 'Artifacts' };
-        const taskNames = { chat: 'Chat', code: 'Code', image: 'SVG' };
+        const taskNames = { chat: 'Chat', code: 'Code', image: 'SVG', web:'Web search', research:'Research' };
         const logoSvg = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M38 5C20 4 7 17 7 33c0 16 13 27 28 27 11 0 21-6 25-16-6 4-12 5-18 3-13-4-20-18-15-30 2-5 6-9 11-12Z"/></svg>`;
         const icons = {
+            globe: `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 7h14M5 17h14"/></svg>`,
             menu: `<svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 15h10"/></svg>`,
             close: `<svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6l-12 12"/></svg>`,
             search: `<svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>`,
@@ -579,7 +580,7 @@ try {
         function systemPrompt(t,q='') {
             const lang=answerLanguage(q), name=activeModel().name;
             let p=lang==='Russian'?'Ты — '+name+' в приложении Solune. Ответь на ПОСЛЕДНИЙ вопрос пользователя по-русски. Не повторяй приветствие, не предлагай помощь вместо ответа. Если не знаешь — скажи.':lang==='Ukrainian'?'Ти — '+name+' у Solune. Відповідай на останнє запитання українською, без зайвих привітань.':'You are '+name+' in Solune. Answer the latest user question directly in English. Do not repeat greetings or offer help instead of answering. Admit uncertainty.';
-            p+=' You are the '+name+' assistant profile, powered by an underlying third-party AI model. Do not claim Solune trained the underlying weights. Answer identity questions truthfully.';
+            p+=' Your displayed identity is '+name+'. Introduce yourself under this name. Do not claim to be GPT-4 or independently trained by Solune. Answer explicit provenance questions truthfully.';
             if(/скилл|настрой|тариф|лимит|интерфейс|как (включить|переключить|открыть)|skills|settings/i.test(q))p+=' Solune: model selector changes model/depth; + or / opens skills. /img SVG, /code code, /deep review, /instant short; menu > Usage. Opal, code and deep require Pro/Dev. Explain navigation only.';
             if(t==='image')p+=' Create a polished complete SVG with xmlns and viewBox. Use coherent composition, layered shapes, intentional typography, original details and gradients. No scripts, markdown or external resources.';
             if(t==='code')p+=' Return complete runnable files in fenced code blocks. Use filename after language, e.g. html index.html. Prefer standalone HTML for preview. For revisions return the complete updated file.';
@@ -773,7 +774,7 @@ try {
                 }
                 const body = newEl('div', 'assist-body');
                 renderAnswer(body, m.content || '', m.task, !m.pending, m.demo);
-                if(m.truncated){const b=newEl('button','card-btn','Continue response');b.onclick=()=>{$('prompt').value='Continue from the last response without repeating the completed content.';resizePrompt();send();};body.append(b);}if(m.error){const e=newEl('div','response-error');e.append(newEl('p','',esc(m.error)));const b=newEl('button','card-btn',icon('retry')+'<span>Try again</span>');b.onclick=()=>retry(m);e.append(b);body.append(e);}
+                if(m.truncated&&!m.pending){const b=newEl('button','card-btn','Continue response');b.onclick=()=>{if(busy)return;if(current.messages[current.messages.length-1]!==m){toast('Continue from the latest response or retry this message');return;}task=m.task||'chat';skill=m.skill||'';$('prompt').value='Continue from the last response without repeating the completed content.';resizePrompt();send();};body.append(b);}if(m.error){const e=newEl('div','response-error');e.append(newEl('p','',esc(m.error)));const b=newEl('button','card-btn',icon('retry')+'<span>Try again</span>');b.onclick=()=>retry(m);e.append(b);body.append(e);}
                 if(m.qualityWarning) body.append(newEl('p','language-warning','The response was incomplete. Try Solune Marble or Solune Opal.'));
                 if(m.languageWarning) body.append(newEl('p','language-warning','The response may not match your requested language.'));
                 as.append(body);
@@ -1173,7 +1174,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             openSheet('Plans',body=>{
                 body.append(newEl('p','helper','Free test plans. Personal and shared server limits apply. Pro and Dev require a password.'));
                 for(const [p,f] of [['free','20%'],['pro','50%'],['dev','100%']]){
-                    const c=newEl('div','plan-card'+(p===plan?' selected':''));c.append(newEl('h3','',PLANS[p].name+' · '+f),newEl('p','helper',p==='free'?'Paper, Marble, SVG and quick answers':'All profiles, Code and /deep'));
+                    const c=newEl('div','plan-card'+(p===plan?' selected':''));c.append(newEl('h3','',PLANS[p].name+' · '+f),newEl('p','helper',p==='free'?'Paper, Marble, SVG, web search and quick answers':'All profiles, Code, Deep and Research'));
                     const input=document.createElement('input');input.type='password';input.placeholder='Plan password';input.autocomplete='off';input.className='plan-password';
                     if(p!=='free'&&p!==plan)c.append(input);
                     const b=newEl('button','plan-action',p===plan?'Current plan':'Activate');b.disabled=p===plan;
@@ -1196,7 +1197,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 const cards = newEl('div', 'plan-cards');
                 for (let [id, p] of Object.entries(PLANS)) {
                     let c = newEl('div', 'plan-card' + (id === plan ? ' selected' : ''));
-                    c.innerHTML = '<div class="plan-head"><strong>' + p.name + '</strong><span class="skill-badge">' + (id === 'pro' ? '50%' : id === 'dev' ? '100%' : '20%') + '</span></div><small>' + (id === 'free' ? 'Chat, /img and /instant · 60 units/day' : id === 'pro' ? 'Everything in Free, Opal, /code and /deep · 150 units/day' : 'All skills · 300 units/day') + '</small>';
+                    c.innerHTML = '<div class="plan-head"><strong>' + p.name + '</strong><span class="skill-badge">' + (id === 'pro' ? '50%' : id === 'dev' ? '100%' : '20%') + '</span></div><small>' + (id === 'free' ? 'Chat, SVG and quick answers · 60 units/day' : id === 'pro' ? 'Everything in Free, Opal, Code and Deep · 150 units/day' : 'All skills · 300 units/day') + '</small>';
                     let b = newEl('button', 'plan-action', id === plan ? 'Current plan' : 'Switch to ' + p.name + ' · free');
                     b.disabled = id === plan;
                     b.onclick = () => { if (busy || loading) {
