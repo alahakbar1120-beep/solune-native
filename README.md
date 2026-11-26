@@ -1,16 +1,21 @@
-# Solune Native 2.1 — инженерный прототип
+# Solune 2.2
 
-Интерфейс предыдущей версии Solune сохранён в WebView. Локальное вычисление переносится в C++ (llama.cpp), не в JavaScript. Сборка ARM64 рассчитана на современные Android-устройства, в том числе Moto G55. Фоновый сервис с уведомлением и ограниченным по времени WakeLock позволяет продолжать вычисления при сворачивании, пока Android не остановит процесс. Не гарантирует работу после принудительной остановки или уничтожения процесса.
+Android and browser AI chat with a shared English interface, local chat history, coding workspaces, and sandboxed HTML/SVG artifacts. Cloud is the default. Solune is an assistant product using third-party models, not independently trained weights.
 
-## Сборка
-1. Распакуйте архив и откройте папку SoluneNative в Android Studio на ПК.
-2. Установите через SDK Manager Android SDK 35, NDK 27.2.12479018 и CMake 3.22.1. Используйте JDK 17 и Gradle 8.9 (при необходимости создайте wrapper: `gradle wrapper --gradle-version 8.9`).
-3. Синхронизируйте Gradle. CMake скачает исходники llama.cpp b5046. Интернет нужен при сборке.
-4. Build → Build APK(s), либо `gradle :app:assembleDebug`. Установите app/build/outputs/apk/debug/app-debug.apk на телефон.
-5. В приложении подтвердите загрузку нужной модели. Не загружайте все сразу при нехватке места. Предыдущие ONNX-веса не совместимы.
+| Profile | Purpose |
+| --- | --- |
+| Solune Paper 2.6 | Fast answers for everyday questions |
+| Solune Marble 2.1 | Balanced intelligence for everyday tasks and creativity |
+| Solune Opal 1.5 | Advanced reasoning, coding and complex tasks |
 
-## Источники моделей
-Paper — bartowski/SmolLM2-360M-Instruct-GGUF; Marble — Qwen/Qwen2.5-0.5B-Instruct-GGUF; Opal — Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF. Все Q4_K_M. Solune — интерфейс и профиль, веса не переобучены. Проверьте лицензии перед распространением.
+## APK
+Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads Solune-2.2-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
 
-## Ограничения и тестирование
-Проект не скомпилирован в данной среде: SDK/NDK отсутствуют. JNI ABI, совместимость закреплённой версии llama.cpp, загрузка и скорость на устройстве требуют проверки. Сервис держит модель в памяти, создаёт новый контекст 2048 токенов на запрос, использует до 4 потоков, mmap. При переключении освобождает прежнюю модель. Доступ к нативному мосту ограничен главным доверенным origin; внешние веб-ресурсы блокируются, поэтому внешний API/диктовка и часть функций старого интерфейса могут быть недоступны. SVG — векторный вывод, не фотогенерация. Восстановление после уничтожения процесса не реализовано. Лимиты тарифов локальные тестовые. Проверяйте первую сборку на коротких запросах, затем коде, SVG и сворачивании во время генерации. Если сборка выдаёт ошибку, сохраните полный Build Output.
+## Cloud
+The existing Space is https://fggh567-solune.hf.space. The Docker Space uses CPU Basic as an API gateway; no neural-network weights are loaded on the server. GitHub Actions syncs the cloud directory and shared UI. Required repository secrets: HF_TOKEN (Space write access), GROQ_API_KEY; optional GROQ_API_KEY_2 and GROQ_API_KEY_3 for auth-failure backup; SOLUNE_PRO_PASSWORD and SOLUNE_DEV_PASSWORD to activate test plans. Keep all credentials server-side. The last checked deployment failed because HF_TOKEN was empty. Do not treat the endpoint as live until verified.
+
+## Engineering attribution
+Cloud mappings are in cloud/app.py. Local models: SmolLM2-360M-Instruct, Qwen2.5-0.5B-Instruct, Qwen2.5-Coder-1.5B-Instruct GGUF Q4_K_M. Verify licenses before redistribution. Local models are not bundled in APK; downloads are optional. Cloud and local profiles differ in capability.
+
+## Limitations
+Cloud quotas are session-based in memory, shared ceiling is enforced, and usage resets after server restart. Not a production account system; Firebase is not connected. Observed provider quota headers are not aggregate account balances. No failover on quota exhaustion. SVG is vector generation, not raster image generation. External resources are disabled in HTML previews. Local engine and Android background behavior require device testing; cloud generation may stop if Android kills the app. Do not claim successful APK build or deployment without CI evidence.
