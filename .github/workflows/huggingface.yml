@@ -31,7 +31,7 @@ jobs:
           PY
           node --check /tmp/solune.js
           python -m py_compile cloud/app.py
-      - run: pip install 'huggingface_hub>=0.27,<2' -r cloud/requirements.txt httpx
+      - run: pip install -r cloud/requirements.txt httpx
       - name: Test gateway without real API keys
         run: |
           cd cloud
@@ -63,5 +63,41 @@ jobs:
               r=c.post("/v1/chat/completions",json=q,headers=h)
               assert r.status_code==429 and p.call_count==1
           assert c.get("/v1/usage",headers=h).json()["models"]["paper"]["tokens_used"]==42
+          assert app.FRACTION == {"free":.20,"pro":.50,"dev":1.0}
+          assert len(set(app.MODELS.values()))==3
+          assert c.get("/v1/usage",headers=h).json()["models"]["paper"]["tokens_limit"]==int(app.DAY_TOKENS*.20)
+          def request(model,task="chat",question="Explain gravity",max_tokens=512):
+              return {"model":model,"task":task,"messages":[{"role":"user","content":question}],"max_tokens":max_tokens}
+          pro=c.post("/v1/unlock",json={"plan":"pro","password":"test-pro"},headers=h).json()
+          hp={"Authorization":"Bearer "+pro["token"]}
+          for model,name in app.PROFILE_NAMES.items():
+              r=c.post("/v1/chat/completions",json=request(model,question="Who are you?"),headers=hp)
+              assert name in r.text
+              with patch("app.requests.post",return_value=Reply(200)) as p:
+                  r=c.post("/v1/chat/completions",json=request(model),headers=hp)
+                  assert "[DONE]" in r.text and p.call_args.kwargs["json"]["model"]==app.MODELS[model]
+          class Complete(Reply):
+              def __init__(self,content,finish="stop"):super().__init__(200);self.content=content;self.finish=finish
+              def json(self):return {"choices":[{"message":{"content":self.content},"finish_reason":self.finish}],"usage":{"total_tokens":64}}
+          with patch("app.requests.post",side_effect=[Complete("Draft answer"),Complete("Verified answer")]) as p:
+              r=c.post("/v1/chat/completions",json=request("opal","deep"),headers=hp)
+              assert "Verified answer" in r.text and "Reviewing reasoning" in r.text and p.call_count==2
+          with patch("app.requests.post",side_effect=[Complete("Evidence https://example.org"),Complete("Final https://example.org")]) as p:
+              r=c.post("/v1/chat/completions",json=request("marble","research"),headers=hp)
+              assert "Final https://example.org" in r.text
+              assert p.call_args_list[0].kwargs["json"]["tools"]==[{"type":"browser_search"}]
+              assert p.call_args_list[1].kwargs["json"]["model"]==app.MODELS["marble"]
+          svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30"/></svg>'
+          with patch("app.requests.post",side_effect=[Complete(svg),Complete(svg)]) as p:
+              r=c.post("/v1/chat/completions",json=request("marble","image"),headers=hp)
+              assert "Checking SVG" in r.text and "circle" in r.text and p.call_count==2
+          class Truncated(Reply):
+              def iter_lines(self,**kwargs):
+                  yield b'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}'
+                  yield b'data: {"usage":{"total_tokens":60}}'
+                  yield b'data: [DONE]'
+          with patch("app.requests.post",side_effect=[Truncated(200),Complete(" continuation")]) as p:
+              r=c.post("/v1/chat/completions",json=request("opal","code"),headers=hp)
+              assert "partial" in r.text and "continuation" in r.text and p.call_count==2
           print("Gateway mock tests passed")
           PY
