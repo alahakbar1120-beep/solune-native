@@ -1,0 +1,10 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'com.solune.app'
+ compileSdk 35
+ ndkVersion '27.2.12479018'
+ defaultConfig { applicationId 'com.solune.app'; minSdk 26; targetSdk 34; versionCode 21; versionName '2.1-native'; ndk { abiFilters 'arm64-v8a' }; externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared' } } }
+ externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation "androidx.webkit:webkit:1.12.1" }
