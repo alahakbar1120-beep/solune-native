@@ -12,7 +12,7 @@ Android and browser AI chat with a shared English interface, local chat history,
 Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads Solune-2.2-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
 
 ## Cloud
-The existing Space is https://fggh567-solune.hf.space. The Docker Space uses CPU Basic as an API gateway; no neural-network weights are loaded on the server. GitHub Actions syncs the cloud directory and shared UI. Required repository secrets: HF_TOKEN (Space write access), GROQ_API_KEY; optional GROQ_API_KEY_2 and GROQ_API_KEY_3 for auth-failure backup; SOLUNE_PRO_PASSWORD and SOLUNE_DEV_PASSWORD to activate test plans. Keep all credentials server-side. The last checked deployment failed because HF_TOKEN was empty. Do not treat the endpoint as live until verified.
+Railway serves the API and shared UI at https://solune-cloud-production.up.railway.app. Set GROQ_API_KEY and optional backup keys and plan passwords in Railway Variables. No HF_TOKEN required. Verify live generation before release.
 
 ## Engineering attribution
 Cloud mappings are in cloud/app.py. Local models: SmolLM2-360M-Instruct, Qwen2.5-0.5B-Instruct, Qwen2.5-Coder-1.5B-Instruct GGUF Q4_K_M. Verify licenses before redistribution. Local models are not bundled in APK; downloads are optional. Cloud and local profiles differ in capability.
