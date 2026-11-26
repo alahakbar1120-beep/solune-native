@@ -294,7 +294,7 @@ body.theme-light .toast{background:#292622;color:white}
 @media(max-width:360px){.composer-toolbar{gap:4px}.composer-toolbar .tool-chip{font-size:10px;padding:8px 6px}.composer-toolbar .tool-chip span+span{display:none}.composer.compact-input{grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:3px}}
 @media(prefers-reduced-motion:reduce){.fresh-message *{animation:none!important}}body.reduced .fresh-message *{animation:none!important}
 
-</style>
+.html-preview{display:block;width:100%;height:min(65dvh,650px);min-height:320px;background:#fff;border:1px solid var(--line);border-radius:16px;}.preview-toolbar{display:flex;gap:8px;}.preview-toolbar button{flex:1}.plan-password{width:100%;padding:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:12px;font:inherit}.code-chat-row{min-height:68px}.code-workspace .primary{min-height:56px}.preview-modal img{max-width:100%;max-height:75dvh;object-fit:contain}.code-tools button{min-width:44px;min-height:44px}.library-grid{gap:8px}.plan-card{animation:pop .2s ease-out}</style>
 
 <style>
 .model-option .model-state{transition:color .22s,opacity .22s}.model-option.selected .model-state{color:var(--accent)}.sheet.open .option,.sheet.open .settings-card{animation:solune-enter .27s cubic-bezier(.2,.8,.2,1) both}.sheet.open .option:nth-child(2){animation-delay:25ms}.sheet.open .option:nth-child(3){animation-delay:45ms}.sheet.open .option:nth-child(4){animation-delay:60ms}.image-card,.code-card{animation:solune-enter .25s ease-out both}.thinking:not(.done){transition:opacity .2s}.model-option:active,.plan-action:active{transform:scale(.98)}.theme-card:focus-visible,.actionbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@keyframes solune-enter{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
@@ -466,21 +466,29 @@ try {
             c.messages = (Array.isArray(c.messages) ? c.messages : []).filter(m => m).map(m => m.pending ? Object.assign(m,{pending:false,error:'Ответ прерван после закрытия приложения.'}) : m);
         }
         let currentId = read('marble15-current', null);
-        let current = chats.find(c => c.id === currentId) || chats[0] || null;
+        let current=chats.find(c=>c.id===currentId)||chats[0]||null;
+        for(const c of chats)if(!c.kind)c.kind=c.messages.some(m=>m.role==='user'&&m.task==='code')?'code':'chat';
         let view = read('marble15-view', 'chat');
         if (!['chat', 'projects', 'code', 'artifacts'].includes(view))
             view = 'chat';
         let task = read('marble15-task', 'chat');
         let depth = read('marble15-depth', 'medium');
-        let mode = read('marble15-mode', 'local');
-        if (!['local', 'api', 'demo'].includes(mode))
-            mode = 'local';
+        let mode = read('solune-mode-v2', 'cloud');
+        if (!['local','api','demo','cloud'].includes(mode)) mode='cloud';
+        if(!window.SoluneNative&&mode==='local')mode='cloud';
+        const cloudBase=location.hostname==='fggh567-solune.hf.space'?'':'https://fggh567-solune.hf.space';
+        let cloudToken='',cloudUsage=null;
+        try{cloudToken=sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
+        const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
+        async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));const data=await r.json();if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Ошибка сервера '+r.status);}return data;}
+        function setCloudPlan(p,token){plan=p;cloudToken=token||'';try{sessionStorage.setItem('solune-cloud-session',cloudToken)}catch(e){};if(p==='free'&&selectedModel==='opal')selectedModel='marble';if(p==='free'&&!permitted(task,skill)){task='chat';skill='';}save('marble15-plan',p);persist();updateControls();}
+        async function syncCloudPlan(){try{cloudUsage=await cloudJSON('/v1/usage');setCloudPlan(cloudUsage.plan,cloudToken);}catch(e){if(!cloudToken)setCloudPlan('free','');}}
         let settings = Object.assign({ theme: read('marble15-theme', 'dark'), haptic: true, compact: false, reducedMotion: false, fullChat: false, font: 'default', keepAwake: false, notifyDone: false, language: 'ru' }, read('marble15-settings', {}));
         let api = read('marble15-api', { url: '', model: '' });
         let draft = read('marble15-draft', '');
         if (typeof draft !== 'string')
             draft = '';
-        let plan = read('marble15-plan', 'free');
+        let plan=mode==='cloud'?'free':read('marble15-plan','free');
         if (!['free', 'pro', 'dev'].includes(plan))
             plan = 'free';
         let usage = read('marble15-usage', []);
@@ -521,7 +529,7 @@ try {
         (_b = mediaDark === null || mediaDark === void 0 ? void 0 : mediaDark.addEventListener) === null || _b === void 0 ? void 0 : _b.call(mediaDark, 'change', () => { if (settings.theme === 'system')
             applyTheme(); });
         applyTheme();
-        function persist() { save('marble15-chats', chats); save('marble15-current', (current === null || current === void 0 ? void 0 : current.id) || null); save('marble15-view', view); save('marble15-task', task); save('marble15-depth', depth); save('marble15-mode', mode); save('marble15-settings', settings); save('solune-selected', selectedModel); save('solune-installed', installed); }
+        function persist() { save('marble15-chats', chats); save('marble15-current', (current === null || current === void 0 ? void 0 : current.id) || null); save('marble15-view', view); save('marble15-task', task); save('marble15-depth', depth); save('solune-mode-v2', mode); save('marble15-settings', settings); save('solune-selected', selectedModel); save('solune-installed', installed); }
         function icon(name) { return icons[name] || ''; }
         function makeLogoButton(id) { $(id).innerHTML = logoSvg; }
         ['topLogo', 'drawerBrand'].forEach(makeLogoButton);
@@ -552,8 +560,8 @@ try {
         function openSheet(title, build) { hideSkills(); $('sheet').classList.toggle('settings-page', ['Настройки', 'Тарифы', 'Использование'].includes(title)); $('sheet').inert = false; $('sheetTitle').textContent = title; const body = $('sheetBody'); body.replaceChildren(); if (build)
             build(body); $('overlay').classList.add('open'); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false'); haptic(); }
         function closeSheet() { $('overlay').classList.remove('open'); $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); $('sheet').inert = true; }
-        function togglePreview(src, label = 'Предпросмотр') { $('previewImage').src = src; $('previewLabel').textContent = label; $('previewModal').classList.add('open'); }
-        function closePreview() { $('previewModal').classList.remove('open'); }
+        function togglePreview(src,label='Предпросмотр'){const img=$('previewImage');img.onerror=()=>toast('Не удалось отобразить изображение');img.src=src;$('previewLabel').textContent=label;$('previewModal').classList.add('open');}
+        function closePreview() { $('previewModal').classList.remove('open');$('previewImage').removeAttribute('src'); }
         function newEl(tag, cls, html) { const n = document.createElement(tag); if (cls)
             n.className = cls; if (html !== undefined)
             n.innerHTML = html; return n; }
@@ -569,23 +577,23 @@ try {
             if(/кто ты|модел|разработ|основ[ае]|who are you|model|trained/i.test(q)) p+=' App profile: '+name+'. Base: '+(mode==='local'?activeModel().base:'external model')+'. Weights not retrained.';
             if(/скилл|настрой|тариф|лимит|интерфейс|как (включить|переключить|открыть)|skills|settings/i.test(q))p+=' Solune: model selector changes model/depth; + or / opens skills. /img SVG, /code code, /deep review, /instant short; menu > Usage. Opal, code and deep require Pro/Dev. Explain navigation only.';
             if(t==='image')p='Create ONLY complete valid SVG XML with xmlns and viewBox. No scripts, markdown or external resources.';
-            if(t==='code')p+=' Return runnable code in a fenced block.';
+            if(t==='code')p+=' Return complete runnable files in fenced code blocks. Use filename after language, e.g. html index.html. Prefer standalone HTML for preview. For revisions return the complete updated file.';
             return p;
         }
         function genericReply(text){return /^(?:привет[!., ]*|здравствуйте[!., ]*|hello[!., ]*|hi[!., ]*|я готов(?:а)? помочь[!., ]*|чем (?:я могу|могу) (?:вам |тебе )?помочь[!?., ]*|(?:i am|i\u0027m) (?:ready|here) to help[!., ]*|how can i help(?: you)?[!?., ]*)+$/i.test(String(text||'').trim());}
         function messagesFor(type) {
             let all=((current&&current.messages)||[]).filter(m=>m.role==='user'||(m.role==='assistant'&&!m.pending&&!m.demo&&!m.error&&!m.languageWarning&&m.task!=='image'&&!genericReply(m.content)));
             let q=(all.filter(m=>m.role==='user').slice(-1)[0]||{}).content||'';
-            let limit=type==='chat'?((generationDepth||depth)==='high'?5:3):3;
-            let past=all.slice(0,-1).slice(-limit).map(m=>({role:m.role,content:m.content.slice(0,selectedModel==='opal'?1200:800)}));
+            let limit=mode==='cloud'?(type==='code'?9:7):type==='chat'?((generationDepth||depth)==='high'?5:3):3;
+            let past=all.slice(0,-1).slice(-limit).map(m=>({role:m.role,content:m.content.slice(0,mode==='cloud'?(type==='code'?9000:2000):selectedModel==='opal'?1200:800)}));
             if(type==='image')return [{role:'system',content:systemPrompt(type,q)},{role:'user',content:q.slice(0,3000)}];
             if(/^(привет|здравствуй(?:те)?|hi|hello|hey)[!?. ]*$/i.test(q))past=[];
             // Keep only complete user/assistant history pairs; always append newest full request.
             while(past.length&&past[0].role!=='user')past.shift();
             let pairs=[];for(let i=0;i+1<past.length;i++){if(past[i].role==='user'&&past[i+1].role==='assistant'){pairs.push(past[i],past[i+1]);i++;}}
-            let lang=answerLanguage(q);let request=q.slice(0,6000);
+            let lang=answerLanguage(q);let request=q.slice(0,mode==='cloud'?10000:6000);
             if(lang==='Russian'&&type==='chat')request+='\nОтветь по-русски на вопрос выше, без вступления.';
-            return [{role:'system',content:systemPrompt(type,q)},...pairs,{role:'user',content:request}];
+            while(pairs.length&&pairs.reduce((n,m)=>n+m.content.length,0)+request.length>19000)pairs.splice(0,2);return [{role:'system',content:systemPrompt(type,q)},...pairs,{role:'user',content:request}];
         }
         function tokenBudget(t, chosen, q) {
             if(t==='image')return 900;
@@ -638,7 +646,7 @@ try {
                 continue;
             }
             const p = newEl('p');
-            p.innerHTML = inline(block.replace(/\n/g, '<br>'));
+            p.innerHTML=inline(block).replace(/\n/g,'<br>');
             node.append(p);
         } }
         function inline(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*\n]+)\*/g, '<em>$1</em>'); }
@@ -648,21 +656,17 @@ try {
             out += '<span class="' + c + '">' + esc(t) + '</span>';
             i = m.index + t.length;
         } return out + esc(code.slice(i)); }
-        function codeCard(lang, code) {
-            const box = newEl('div', 'code-card');
-            const top = newEl('div', 'code-top');
-            top.innerHTML = `<span>${esc(lang || 'code') || 'code'}</span>`;
-            const tools = newEl('div', 'code-tools');
-            const copyBtn = action('copy', 'Копировать', () => copy(code));
-            tools.append(copyBtn, action('download', 'Скачать код', () => download(code, 'marble.' + ({ html: 'html', javascript: 'js', js: 'js', python: 'py', css: 'css' }[lang] || 'txt'))));
-            if ((lang || '').toLowerCase().includes('html'))
-                tools.append(action('play', 'Открыть превью', () => openHtmlPreview(code)));
-            box.append(top);
-            top.append(tools);
-            const pre = newEl('pre');
-            pre.innerHTML = codeHighlight(code);
-            box.append(pre);
-            return box;
+        function codeCard(lang,code){
+            const box=newEl('div','code-card'),top=newEl('div','code-top');
+            const info=String(lang||'').trim().split(/\s+/),kind=(info[0]||'text').toLowerCase();
+            const ext={html:'html',javascript:'js',js:'js',typescript:'ts',python:'py',css:'css',svg:'svg',json:'json',java:'java',kotlin:'kt',cpp:'cpp',c:'c',bash:'sh',sql:'sql'}[kind]||'txt';
+            const name=(info[1]||('solune.'+ext)).split(/[\\/]/).pop().replace(/[^a-zA-Z0-9_.-]/g,'_')||'solune.txt';
+            top.append(newEl('span','',esc(name)));const tools=newEl('div','code-tools');
+            tools.append(action('copy','Копировать',()=>copy(code)),action('download','Скачать файл',()=>download(code,name,ext==='html'?'text/html':ext==='svg'?'image/svg+xml':'text/plain')));
+            if(ext==='html'||/^\s*(?:<!doctype\s+html|<html\b|<body\b|<style\b)/i.test(code))tools.append(action('play','Открыть HTML',()=>openHtmlPreview(code)));
+            const svg=getSVG(code);if(svg)tools.append(action('image','Открыть SVG',()=>togglePreview(svgEncode(svg),'SVG')));
+            top.append(tools);box.append(top);const pre=newEl('pre');pre.innerHTML=codeHighlight(code);box.append(pre);
+            if(svg&&ext==='svg')box.append(imageCard(svg));return box;
         }
         function buildTable(lines) { const wrap = newEl('div', 'table-wrap'); const table = document.createElement('table'); const rows = lines.map(l => l.trim().replace(/^\||\|$/g, '').split('|').map(x => x.trim())); if (rows.length < 2)
             return null; const head = rows[0], body = rows.slice(2); let tr = document.createElement('tr'); head.forEach(x => { const th = document.createElement('th'); th.textContent = x; tr.append(th); }); table.append(tr); body.forEach(r => { let tr = document.createElement('tr'); r.forEach(x => { const td = document.createElement('td'); td.innerHTML = inline(x); tr.append(td); }); table.append(tr); }); wrap.append(table); return wrap; }
@@ -718,7 +722,8 @@ try {
         function imageCard(svg, demo = false) { const card = newEl('div', 'image-card'); const frame = newEl('div', 'image-frame'); const img = new Image(); img.src = svgEncode(svg); img.alt = 'SVG'; frame.append(img); const ov = newEl('div', 'gen-overlay', icon('image') + '<span>' + (demo ? 'демо SVG' : 'SVG результат') + '</span>'); frame.append(ov); const bar = newEl('div', 'image-bar'); bar.innerHTML = `<span>${demo ? 'демо' : 'marble imagine'} · ${Math.round(svg.length / 10) / 100} KB</span>`; const acts = newEl('div', 'image-actions'); acts.append(action('play', 'Открыть', () => togglePreview(svgEncode(svg), 'SVG-предпросмотр')), action('download', 'Скачать SVG', () => download(svg, 'marble-image.svg', 'image/svg+xml')), action('image', 'Скачать PNG', () => svgToPng(svg))); bar.append(acts); card.append(frame, bar); return card; }
         function renderAnswer(node, content, taskType, complete = true, demo = false) {
             node.replaceChildren();
-            const svg = taskType === 'image' ? getSVG(content) : '';
+            const svg=complete?getSVG(content):null;
+            if(svg&&taskType!=='image'&&/^\s*(?:```svg\s*)?<svg\b/i.test(content)){node.append(imageCard(svg,demo));return;}
             if (taskType === 'image') {
                 if (svg && complete) {
                     node.append(imageCard(svg, demo));
@@ -793,12 +798,12 @@ try {
             return wrap;
         }
         function ensureCurrent() { if (current)
-            return current; const c = { id: Date.now(), title: 'Новый чат', created: Date.now(), messages: [] }; chats.unshift(c); current = c; persist(); return c; }
+            return current; const c={id:Date.now(),title:'Новый чат',kind:task==='code'?'code':'chat',created:Date.now(),messages:[]}; chats.unshift(c); current = c; persist(); return c; }
         function validPrompt() { let t = $('prompt').value.trim(); return !!t && !/^\/(?:img|code|deep|instant|дип)?$/i.test(t); }
         function updateComposer() { let has = !!(current && current.messages && current.messages.length); let compact = view === 'chat' && has && !$('prompt').value.trim() && document.activeElement !== $('prompt') && !skill && task === 'chat'; $('composer').classList.toggle('compact-input', compact); $('sendBtn').disabled = !busy && !validPrompt(); }
         function updateControls() {
             var _a;
-            $('brandStatus').textContent = mode === 'demo' ? 'Демонстрационный режим' : ready ? 'Локальный движок' : mode === 'api' ? 'Внешний API' : loading ? 'Загрузка ' + Math.floor(progress.pct) + '%' : 'Модель не загружена';
+            $('brandStatus').textContent = mode==='cloud'?'Solune Cloud':mode === 'demo' ? 'Демонстрационный режим' : ready ? 'Локальный движок' : mode === 'api' ? 'Внешний API' : loading ? 'Загрузка ' + Math.floor(progress.pct) + '%' : 'Модель не загружена';
             document.querySelector('.brand-title').textContent = view === 'chat' ? (((_a = current === null || current === void 0 ? void 0 : current.messages) === null || _a === void 0 ? void 0 : _a.length) ? current.title : activeModel().name) : viewNames[view];
             $('prompt').placeholder = task === 'image' ? 'Опишите изображение…' : task === 'code' ? 'Что написать?' : 'Напишите ' + activeModel().name.split(' ')[0] + '…';
             $('modeBtn').innerHTML = '<span style="color:var(--text)">' + activeModel().name + '</span><span>' + depthNames[depth] + '</span>';
@@ -807,7 +812,7 @@ try {
             $('sendBtn').innerHTML = icon(busy ? 'stop' : 'send');
             $('sendBtn').disabled = !busy && !validPrompt();
             $('sendBtn').setAttribute('aria-label', busy ? 'Остановить' : 'Отправить');
-            $('note').textContent = mode === 'demo' ? 'Демо · подготовленные примеры' : mode === 'api' ? 'Внешний API' : ready ? 'Локальный движок готов' : loading ? 'Загрузка модели…' : 'Требуется загрузка модели';
+            $('note').textContent = mode==='cloud'?'Облако · интернет':mode === 'demo' ? 'Демо · подготовленные примеры' : mode === 'api' ? 'Внешний API' : ready ? 'Локальный движок готов' : loading ? 'Загрузка модели…' : 'Требуется загрузка модели';
             const pill = $('modePill'), show = skill || task !== 'chat';
             pill.classList.toggle('show', !!show);
             $('composer').classList.toggle('has-mode', !!show);
@@ -867,21 +872,16 @@ try {
             else if (view === 'projects') {
                 feed.append(renderProjects());
             }
-            else if (view === 'code') {
-                const lib = newEl('div', 'library');
-                lib.append(newEl('h2', '', 'Code'));
-                const g = newEl('div', 'library-grid');
-                let count = 0;
-                activeArtifacts().codes.forEach(item => { const w = newEl('div'); w.append(codeCard(item.lang, item.code)); const meta = newEl('div', 'meta-time', `${item.chat} · ${formatTime(item.ts)}`); w.append(meta); g.append(w); count++; });
-                if (!count)
-                    g.append(newEl('div', 'empty-note', 'Здесь будут все кодовые блоки из чатов.'));
-                lib.append(g);
-                const btn = newEl('button', 'card-btn primary', `<div><b>Новый кодовый запрос</b><small>открыть чат и включить режим кода</small></div>`);
-                on(btn, 'click', () => { view = 'chat'; task = 'code'; ensureCurrent(); render(); $('prompt').focus(); });
-                lib.append(btn);
-                feed.append(lib);
+            else if(view==='code'){
+                const lib=newEl('div','library code-workspace');lib.append(newEl('h2','','Code'),newEl('p','helper','Отдельные рабочие чаты для программирования и файлов.'));
+                const btn=newEl('button','card-btn primary',icon('new')+'<span>Новый кодовый чат</span>');btn.onclick=()=>{if(plan==='free'){openPlans();return;}current=null;view='chat';task='code';skill='';$('prompt').value='';resizePrompt();render();$('prompt').focus();};lib.append(btn);
+                const g=newEl('div','library-grid');const codeChats=chats.filter(c=>c.kind==='code');
+                for(const c of codeChats){const n=c.messages.filter(m=>m.role==='assistant').reduce((a,m)=>a+(String(m.content||'').match(/\x60\x60\x60[^\n]*\n[\s\S]*?\x60\x60\x60/g)||[]).length,0);const b=newEl('button','option code-chat-row',icon('code')+'<div class="meta"><b>'+esc(c.title)+'</b><small>'+c.messages.length+' сообщений · '+n+' файлов/блоков</small></div>'+icon('chevron'));b.onclick=()=>{current=c;view='chat';task='code';skill='';render();scrollToBottom(true);};g.append(b);}
+                if(!codeChats.length)g.append(newEl('div','empty-note','Создай первый чат для программирования. Код и файлы будут сохраняться в нём.'));
+                lib.append(g);feed.append(lib);
             }
-            else if (view === 'artifacts') {
+            
+        else if (view === 'artifacts') {
                 const lib = newEl('div', 'library');
                 lib.append(newEl('h2', '', 'Артефакты'));
                 const g = newEl('div', 'library-grid');
@@ -904,7 +904,7 @@ try {
         } list.forEach(c => { var _a; const row = newEl('div', 'history-item' + (current && c.id === current.id ? ' active' : '')); const main = newEl('button', 'history-main'); main.innerHTML = `<div class="history-title">${esc(c.title || 'Новый чат')}</div><div class="history-sub">${((_a = c.messages) === null || _a === void 0 ? void 0 : _a.length) || 0} сообщений</div>`; on(main, 'click', () => { if (busy) {
             toast('Сначала остановите ответ');
             return;
-        } current = c; view = 'chat'; render(); setDrawer(false); }); const del = action('trash', 'Удалить чат', () => { if (busy) {
+        } current=c;view='chat';task=c.kind==='code'?'code':'chat';skill='';render();setDrawer(false); }); const del = action('trash', 'Удалить чат', () => { if (busy) {
             toast('Сначала остановите ответ');
             return;
         } if (!confirm('Удалить этот чат?'))
@@ -924,12 +924,21 @@ try {
         } current = null; view = 'chat'; task = 'chat'; skill = ''; $('prompt').value = ''; save('marble15-draft', ''); resizePrompt(); render(); setDrawer(false); if (focus)
             $('prompt').focus(); }
         function editMessage(m) { if (busy)
-            return; openSheet('Изменить сообщение', body => { const helper = newEl('p', 'helper', 'Изменённый запрос будет отправлен в новую ветку, старый чат не потеряется.'); const field = newEl('div', 'field'); const t = document.createElement('textarea'); t.rows = 6; t.value = m.content; field.append(newEl('label', '', 'Новый текст'), t); const btn = newEl('button', 'card-btn primary', '<span>Отправить в новой ветке</span>'); on(btn, 'click', () => { const src = current; const idx = src.messages.indexOf(m); const fork = { id: Date.now(), title: (src.title || 'Чат') + ' · ветка', created: Date.now(), messages: src.messages.slice(0, idx) }; chats.unshift(fork); current = fork; view = 'chat'; task = m.task || 'chat'; $('prompt').value = t.value.trim(); resizePrompt(); closeSheet(); render(); send(); }); body.append(helper, field, btn); setTimeout(() => t.focus(), 20); }); }
+            return; openSheet('Изменить сообщение', body => { const helper = newEl('p', 'helper', 'Изменённый запрос будет отправлен в новую ветку, старый чат не потеряется.'); const field = newEl('div', 'field'); const t = document.createElement('textarea'); t.rows = 6; t.value = m.content; field.append(newEl('label', '', 'Новый текст'), t); const btn = newEl('button', 'card-btn primary', '<span>Отправить в новой ветке</span>'); on(btn, 'click', () => { const src = current; const idx = src.messages.indexOf(m); const fork = { id: Date.now(), title: (src.title || 'Чат') + ' · ветка', kind:src.kind, created: Date.now(), messages: src.messages.slice(0, idx) }; chats.unshift(fork); current = fork; view = 'chat'; task = m.task || 'chat'; $('prompt').value = t.value.trim(); resizePrompt(); closeSheet(); render(); send(); }); body.append(helper, field, btn); setTimeout(() => t.focus(), 20); }); }
         function retry(m) { if (busy || !current)
             return; const idx = current.messages.indexOf(m); if (idx < 1)
             return; const prev = current.messages[idx - 1]; if (prev.role !== 'user')
-            return; const fork = { id: Date.now(), title: current.title + ' · ветка', messages: current.messages.slice(0, idx - 1) }; chats.unshift(fork); current = fork; $('prompt').value = prev.content; task = prev.task || 'chat'; skill = prev.skill || ''; resizePrompt(); view = 'chat'; render(); send(); }
-        function openHtmlPreview(html) { openSheet('Предпросмотр HTML', body => { let f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts'); f.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; img-src data:;">' + html; body.append(f); let b = newEl('button', 'card-btn', 'Скачать HTML'); b.onclick = () => download(html, 'marble.html', 'text/html'); body.append(b); }); }
+            return; const fork = { id: Date.now(), title: current.title + ' · ветка', kind:current.kind, messages: current.messages.slice(0, idx - 1) }; chats.unshift(fork); current = fork; $('prompt').value = prev.content; task = prev.task || 'chat'; skill = prev.skill || ''; resizePrompt(); view = 'chat'; render(); send(); }
+        function openHtmlPreview(html){
+            openSheet('Предпросмотр HTML',body=>{
+                const bar=newEl('div','preview-toolbar'),f=document.createElement('iframe');f.className='html-preview';f.title='Изолированный HTML';f.setAttribute('sandbox','allow-scripts');f.referrerPolicy='no-referrer';
+                const policy="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none';";
+                const src='<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+policy+'">'+html;
+                const reload=newEl('button','card-btn','Перезапустить');reload.onclick=()=>{f.srcdoc=src;};
+                const saveBtn=newEl('button','card-btn','Скачать HTML');saveBtn.onclick=()=>download(html,'solune.html','text/html');bar.append(reload,saveBtn);
+                body.append(bar,f,newEl('p','helper','Изолированное превью: встроенные HTML, CSS и JavaScript. Внешние ресурсы отключены.'));f.srcdoc=src;
+            });
+        }
         function demoText(type, q) {
             if (type === 'image')
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#1f2944"/><stop offset="1" stop-color="#edab80"/></linearGradient></defs><rect width="600" height="420" fill="url(#g)"/><circle cx="455" cy="118" r="54" fill="#ffe0af"/><path d="M0 330L110 170 248 314 354 208 600 332V420H0Z" fill="#68536b"/><path d="M0 356L120 260 255 340 395 260 600 360V420H0Z" fill="#2f3d4a"/><path d="M0 380Q200 356 340 394T600 375V420H0Z" fill="#162730"/></svg>`;
@@ -978,6 +987,14 @@ function reset(){pause();n=0;time.textContent='0.0'}
             buffer = lines.pop();
             lines.forEach(consume);
         } consume(buffer); return text; }
+        async function runCloud(messages,max,refresh,taskType,chosen){
+            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:selectedModel,messages,max_tokens:max,stream:true,task:chosen==='deep'?'deep':taskType,depth:chosen==='instant'?'low':chosen==='deep'?'high':depth}),signal:controller.signal});
+            if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401)setCloudPlan('free','');throw Error(typeof d.detail==='string'?d.detail:'Ошибка облака '+r.status);}
+            if(!r.body)throw Error('Поток ответа недоступен');
+            const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',text='',finished=false,truncated=false;
+            function consume(line){if(!line.startsWith('data:'))return;const x=line.slice(5).trim();if(x==='[DONE]'){finished=true;return;}let o;try{o=JSON.parse(x)}catch(e){return;}if(o.error)throw Error(o.error);if(o.truncated)truncated=true;const delta=o.choices&&o.choices[0]&&o.choices[0].delta;if(delta&&delta.content){text+=delta.content;job.text=text;refresh();}}
+            try{while(true){let chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});let lines=buf.split('\n');buf=lines.pop();for(const line of lines)consume(line);}buf+=decoder.decode();if(buf)consume(buf);if(!finished)throw Error('Поток прерван');if(truncated)toast('Достигнут предел длины ответа');return text;}finally{reader.releaseLock();}
+        }
         function killWorker() { if (worker) {
             worker.terminate();
             worker = null;
@@ -988,10 +1005,10 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 body.append(newEl('p', 'helper', 'Управление моделями Solune. Paper лучше подходит для коротких вопросов на английском; для русского рекомендуем Marble. Источники весов — в разделе «О приложении».'));
                 body.append(modelChoices());
                 const seg = newEl('div', 'segment');
-                [['local', 'Локально', 'без ключа'], ['api', 'API', 'внешний сервер'], ['demo', 'Демо', 'для показа UI']].forEach(([m, name, sub]) => { const b = newEl('button', 'seg-btn' + (mode === m ? ' active' : ''), `<strong>${name}</strong><small>${sub}</small>`); on(b, 'click', () => { if (busy || loading) {
+                [['cloud','Solune Cloud','быстро · интернет'],['local','Локально','без интернета'],['api','API','внешний сервер'],['demo','Демо','для показа UI']].filter(x=>x[0]!=='local'||window.SoluneNative).forEach(([m, name, sub]) => { const b = newEl('button', 'seg-btn' + (mode === m ? ' active' : ''), `<strong>${name}</strong><small>${sub}</small>`); on(b, 'click', () => { if (busy || loading) {
                     toast('Сначала завершите операцию');
                     return;
-                } mode = m; openEngine(); render(); }); seg.append(b); });
+                } mode=m;if(m==='cloud')syncCloudPlan();openEngine();render(); }); seg.append(b); });
                 body.append(seg);
                 const status = newEl('div', 'settings-card');
                 status.innerHTML = `<h3>Состояние</h3><div class="toggle-meta"><b>${ready ? 'Marble готов' : loading ? 'Идёт загрузка' : 'Движок не запущен'}</b><small>${loading ? (progress.text || 'подготовка…') : ready ? 'можно отправлять запросы' : mode === 'demo' ? 'демо не требует загрузки' : mode === 'api' ? 'нужны настройки API' : 'нажмите кнопку ниже для загрузки'}</small></div>`;
@@ -1045,7 +1062,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             const wrap=newEl('div','model-list');
             for(const [id,m] of Object.entries(MODELS)){
                 let locked=id==='opal'&&plan==='free';
-                let b=newEl('button','option model-option'+(id===selectedModel?' selected':''),icon(id==='paper'?'chat':id==='marble'?'brain':'code')+`<div class="meta"><b>${m.name}</b><small>${m.desc} · ~${m.mb} МБ</small></div><span class="model-state">${locked?'Pro':id===selectedModel?'✓':installed.includes(id)?'Кэш':' '}</span>`);
+                let b=newEl('button','option model-option'+(id===selectedModel?' selected':''),icon(id==='paper'?'chat':id==='marble'?'brain':'code')+`<div class="meta"><b>${m.name}</b><small>${m.desc} · ${mode==='cloud'?'облако':'~'+m.mb+' МБ'}</small></div><span class="model-state">${locked?'Pro':id===selectedModel?'✓':installed.includes(id)?'Кэш':' '}</span>`);
                 b.onclick=()=>{if(busy||loading){toast('Сначала завершите текущую операцию');return;}if(locked){openPlans();return;}
                     if(id!==selectedModel){killWorker();selectedModel=id;progress={pct:0,text:'',file:''};persist();render();}
                     if($('sheetTitle').textContent==='Движок Marble')openEngine();else openReason();};wrap.append(b);
@@ -1068,7 +1085,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             b.onclick = () => { save('solune-welcome', true); installQueue = ids.slice(1); selectedModel = ids[0]; mode = 'local'; startModel(); };
             body.append(b);
         } let later = newEl('button', 'option', 'Позже · демонстрация интерфейса'); later.onclick = () => { save('solune-welcome', true); mode = 'demo'; persist(); closeSheet(); render(); }; body.append(later); }); }
-        function openUsage() { openSheet('Использование', body => { let p = PLANS[plan]; body.append(newEl('div', 'usage-overview', `<small>Текущий тариф</small><h2>${p.name}</h2><span>${plan === 'dev' ? 'Без ограничений' : 'Лимиты обновляются автоматически'}</span>`)); for (const [label, ms, limit] of [['5-часовой лимит', 18000000, p.short], ['Еженедельный лимит', 604800000, p.week]]) {
+        function openUsage() { if(mode==='cloud'){openCloudUsage();return;} openSheet('Использование', body => { let p = PLANS[plan]; body.append(newEl('div', 'usage-overview', `<small>Текущий тариф</small><h2>${p.name}</h2><span>${plan === 'dev' ? 'Без ограничений' : 'Лимиты обновляются автоматически'}</span>`)); for (const [label, ms, limit] of [['5-часовой лимит', 18000000, p.short], ['Еженедельный лимит', 604800000, p.week]]) {
             let used = units(ms), percent = Number.isFinite(limit) ? Math.min(100, Math.round(used / limit * 100)) : 0;
             let c = newEl('div', 'settings-card usage-detail', `<div class="usage-label"><b>${label}</b><strong>${Number.isFinite(limit) ? percent + '%' : '∞'}</strong></div><div class="usage-track"><i style="width:${percent}%"></i></div><small>${Number.isFinite(limit) ? used + ' из ' + limit + ' ед. · осталось ' + Math.max(0, limit - used) : 'Нет лимита'}</small>`);
             let times = usage.filter(x => x.plan !== 'dev' && Date.now() - x.at < ms).map(x => x.at + ms);
@@ -1120,7 +1137,33 @@ function reset(){pause();n=0;time.textContent='0.0'}
             });
         }
         function toggleRow(title, sub, value, set) { const row = newEl('div', 'toggle-row'); const meta = newEl('div', 'toggle-meta', `<b>${esc(title)}</b><small>${esc(sub)}</small>`); const sw = newEl('button', 'switch' + (value ? ' on' : ''), '<i></i>'); sw.setAttribute('role', 'switch'); sw.setAttribute('aria-label', title); sw.setAttribute('aria-checked', String(value)); on(sw, 'click', () => { value = !value; sw.classList.toggle('on', value); sw.setAttribute('aria-checked', String(value)); set(value); persist(); toast((value ? 'Включено: ' : 'Выключено: ') + title); }); row.append(meta, sw); return row; }
-        function openPlans() {
+        function openCloudUsage(){
+            openSheet('Использование',body=>{
+                const target=newEl('div','settings-grid');target.append(newEl('p','helper','Получаю статистику…'));body.append(target);
+                cloudJSON('/v1/usage').then(d=>{
+                    cloudUsage=d;setCloudPlan(d.plan,cloudToken);target.replaceChildren();
+                    target.append(newEl('div','usage-overview','<small>Тариф · последние 24 часа</small><h2>'+esc(PLANS[plan].name)+'</h2>'));
+                    for(const [id,m] of Object.entries(d.models)){let pct=Math.min(100,Math.round(m.tokens_used/Math.max(1,m.tokens_limit)*100));target.append(newEl('div','settings-card usage-detail','<div class="usage-label"><b>'+esc(MODELS[id].name)+'</b><strong>'+pct+'%</strong></div><div class="usage-track"><i style="width:'+pct+'%"></i></div><small>'+m.tokens_used.toLocaleString('ru')+' / '+m.tokens_limit.toLocaleString('ru')+' токенов · '+m.requests_used+' / '+m.requests_limit+' запросов</small>'));}
+                    for(const k of d.keys){const names={ok:'Работает',invalid_key:'Ошибка авторизации',rate_limited:'Лимит достигнут',not_checked:'Не проверен',missing:'Не настроен',error:'Ошибка'};const c=newEl('div','settings-card');c.append(newEl('h3','','Ключ '+k.slot+(k.active?' · активный':'')),newEl('p','helper',esc(names[k.state]||k.state)));for(const [id,m] of Object.entries(k.models)){const t=(MODELS[id]||{}).name||id;c.append(newEl('p','helper',esc(t+': запросы/сутки '+(m['remaining-requests']??'—')+' / '+(m['limit-requests']??'—')+' · токены/мин '+(m['remaining-tokens']??'—')+' / '+(m['limit-tokens']??'—'))));}target.append(c);}
+                    target.append(newEl('p','helper',esc(d.note)));
+                }).catch(e=>{target.replaceChildren(newEl('p','helper',esc(e.message)));});
+                const b=newEl('button','card-btn','Обновить');b.onclick=openCloudUsage;body.append(b);
+            });
+        }
+        function openCloudPlans(){
+            openSheet('Тарифы',body=>{
+                body.append(newEl('p','helper','Бесплатные тестовые тарифы. Квота общая для сервера; Pro и Dev активируются паролем.'));
+                for(const [p,f] of [['free','30%'],['pro','60%'],['dev','100%']]){
+                    const c=newEl('div','plan-card'+(p===plan?' selected':''));c.append(newEl('h3','',PLANS[p].name+' · '+f),newEl('p','helper',p==='free'?'Paper, Marble, SVG и быстрый режим':'Все модели, Code и /deep'));
+                    const input=document.createElement('input');input.type='password';input.placeholder='Пароль тарифа';input.autocomplete='off';input.className='plan-password';
+                    if(p!=='free'&&p!==plan)c.append(input);
+                    const b=newEl('button','plan-action',p===plan?'Текущий тариф':'Активировать');b.disabled=p===plan;
+                    b.onclick=async()=>{if(busy){toast('Сначала завершите ответ');return;}b.disabled=true;try{const d=await cloudJSON('/v1/unlock',{method:'POST',body:JSON.stringify({plan:p,password:input.value})});input.value='';setCloudPlan(d.plan,d.token);render();openCloudPlans();toast('Тариф активирован');}catch(e){toast(e.message);b.disabled=false;}};c.append(b);body.append(c);
+                }
+                const u=newEl('button','card-btn','Использование');u.onclick=openCloudUsage;body.append(u);
+            });
+        }
+        function openPlans() { if(mode==='cloud'){openCloudPlans();return;}
             openSheet('Тарифы', body => {
                 body.append(newEl('p', 'helper', 'Тестовый доступ: все тарифы бесплатны, без платежей. Лимиты демонстрационные, сохраняются на устройстве.'));
                 const u = newEl('div', 'settings-card');
@@ -1335,7 +1378,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             let q = $('prompt').value.trim();
             if (!validPrompt() || !q)
                 return;
-            let chosen = skill, resolvedTask = task;
+            let chosen=skill,resolvedTask=current&&current.kind==='code'&&!skill?'code':task;
             let prefix = q.match(/^\/(img|code|deep|instant|дип)(?:\s+|$)/i);
             if (prefix) {
                 chosen = prefix[1].toLowerCase() === 'дип' ? 'deep' : prefix[1].toLowerCase();
@@ -1355,7 +1398,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 return;
             }
             const cost = costFor(resolvedTask, chosen);
-            if (!enough(cost)) {
+            if (mode !== 'cloud' && !enough(cost)) {
                 openPlans();
                 toast('Лимит тарифа исчерпан');
                 return;
@@ -1372,17 +1415,16 @@ function reset(){pause();n=0;time.textContent='0.0'}
             }
             view = 'chat';
             ensureCurrent();
-            const owner = current;
-            if (!owner.messages.length)
+            const owner=current;
+            if(!owner.messages.length&&resolvedTask==='code')owner.kind='code';
+            if(!owner.messages.length)
                 owner.title = q.slice(0, 50);
             owner.messages.push({ role: 'user', content: q, task: resolvedTask, skill: chosen, ts: Date.now(), animate:true });
             $('prompt').value = '';
             $('prompt').blur();
             save('marble15-draft', '');
             hideSkills();
-            skill = '';
-            task = 'chat';
-            busy = true;
+            skill='';task=owner.kind==='code'?'code':'chat';busy=true;
             controller = new AbortController();
             holdAwake();
             generationDepth = chosen === 'instant' ? 'low' : chosen === 'deep' ? 'high' : depth;
@@ -1404,9 +1446,9 @@ function reset(){pause();n=0;time.textContent='0.0'}
             } }, 110); };
             job = { id, text: '', refresh, cancelled: false };
             async function generate(msgs, max) { if (mode === 'local')
-                return await new Promise((resolve, reject) => { Object.assign(job, { id: ++activeReq, resolve, reject }); worker.postMessage({ type: 'generate', id: job.id, messages: msgs, max, task:resolvedTask }); }); return await runAPI(msgs, max, refresh); }
+                return await new Promise((resolve, reject) => { Object.assign(job, { id: ++activeReq, resolve, reject }); worker.postMessage({ type: 'generate', id: job.id, messages: msgs, max, task:resolvedTask }); }); return mode==='cloud'?await runCloud(msgs,max,refresh,resolvedTask,chosen):await runAPI(msgs,max,refresh); }
             try {
-                const max = tokenBudget(resolvedTask,chosen,q);
+                const max=mode==='cloud'?(resolvedTask==='code'?4096:resolvedTask==='image'?2600:chosen==='deep'?3000:chosen==='instant'?384:selectedModel==='paper'?512:depth==='high'?2048:1024):tokenBudget(resolvedTask,chosen,q);
                 if (mode === 'demo') {
                     let t = demoText(resolvedTask, q);
                     if (chosen === 'instant' && resolvedTask === 'chat')
@@ -1428,7 +1470,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                         let corrected=await generate([{role:'system',content:systemPrompt('chat',q)},{role:'user',content:(answerLanguage(q)==='Russian'?'Ответь прямо на вопрос: ':'Answer this question directly: ')+q}], Math.min(max,160));
                         if(corrected && !genericReply(corrected))result=corrected;else assistantMsg.qualityWarning=true;
                     }
-                    if (chosen === 'deep' && !job.cancelled && !controller.signal.aborted && result) {
+                    if (chosen === 'deep' && mode!=='cloud' && !job.cancelled && !controller.signal.aborted && result) {
                         let th = $('feed').querySelector('.thread .msg:last-child .thinking .dots');
                         if (th)
                             th.textContent = 'Проверяю ответ';
@@ -1444,7 +1486,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 if (!result)
                     throw Error('Пустой ответ');
                 if(mode!=='demo' && resolvedTask==='chat' && answerLanguage(q)==='Russian' && !/[а-яё]/i.test(result) && /[a-z]{3}/i.test(result)) assistantMsg.languageWarning=true;
-                charge(cost);
+                if(mode!=='cloud')charge(cost);
             }
             catch (e) {
                 error = controller.signal.aborted || (job === null || job === void 0 ? void 0 : job.cancelled) ? 'Генерация остановлена.' : String(e.message || e);
@@ -1569,8 +1611,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         usageMenu.onclick = () => { if (innerWidth < 940)
             setDrawer(false); openUsage(); };
         $('settingsMenu').before(usageMenu);
-        if (!read('solune-welcome', false))
-            firstSetup();
+        if(mode==='cloud'){save('solune-welcome',true);syncCloudPlan();}else if(!read('solune-welcome',false))firstSetup();
     })();
 }
 catch (e) {
