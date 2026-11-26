@@ -14,16 +14,37 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
       - name: Install Android SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK unavailable}}"
+          MANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$MANAGER" ]; then
+            MANAGER="$(find "$SDK/cmdline-tools" -path '*/bin/sdkmanager' | sort -V | tail -1)"
+          fi
+          test -x "$MANAGER"
+          (set +o pipefail; yes | "$MANAGER" --sdk_root="$SDK" --licenses)
+          "$MANAGER" --sdk_root="$SDK" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Check embedded UI syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("app/src/main/assets/index.html").read_text()
+          Path("/tmp/solune.js").write_text(s.split("<script>",1)[1].rsplit("</script>",1)[0])
+          PY
+          node --check /tmp/solune.js
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
+      - name: Verify APK signature and architecture
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$SDK/build-tools/35.0.0/apksigner" verify "$APK"
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libsolune.so'
       - uses: actions/upload-artifact@v4
         with:
-          name: Solune-debug
+          name: Solune-2.2-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
