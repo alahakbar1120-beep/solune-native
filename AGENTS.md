@@ -8,13 +8,13 @@ Build a real installable ARM64 debug APK for Moto G55 5G / Android 16 from this 
 - Use the SDK manager already installed on the GitHub runner, not the old setup-android action that requests the removed 'tools' package.
 - Generate the Gradle wrapper if needed; run gradle :app:assembleDebug --stacktrace. Fix actual compiler errors. Keep llama.cpp pinned to b5046 unless compatibility requires a documented adjustment.
 - Verify APK signature with apksigner verify and ARM64 native library. Deliver app/build/outputs/apk/debug/app-debug.apk.
-- Android CI: .github/workflows/android.yml. Cloud CI: .github/workflows/huggingface.yml.
+- Android CI: .github/workflows/android.yml. Cloud: Railway root Dockerfile.
 
 ## Product requirements
 English interface, including native notifications, settings, errors, plans, skills and usage. Response language independent of UI, with Auto/English/Russian/Ukrainian.
 Profiles: Solune Paper 2.6 — Fast answers for everyday questions. Solune Marble 2.1 — Balanced intelligence for everyday tasks and creativity. Solune Opal 1.5 — Advanced reasoning, coding and complex tasks.
 Use product names on regular screens. About must explain third-party models; never claim original model training. Keep actual upstream identifiers and licenses in engineering documentation and server configuration.
-Cloud default via https://fggh567-solune.hf.space/v1. No model downloads required for cloud. Local and demo modes remain explicit alternatives; demo must not masquerade as live generation.
+Cloud default via https://solune-cloud-production.up.railway.app/v1. No model downloads required for cloud. Local and demo modes remain explicit alternatives; demo must not masquerade as live generation.
 Free/Pro/Dev: 30/60/100 percent of configured per-model quota; Pro/Dev require server-verified passwords for cloud. No credentials in APK, source or logs. Preserve server-side shared quota; backup keys only for authentication failures, not rate-limit evasion. Separate personal limit from server busy message.
 Code tab: dedicated coding conversations, named fenced files, downloadable code, HTML preview and SVG/PNG export. Never grant generated previews access to native bridge or remote network. Preserve chats and dark/light themes.
 
@@ -27,5 +27,5 @@ Code tab: dedicated coding conversations, named fenced files, downloadable code,
 6. Measure cloud response timing and verify model access if credentials are available. Report exact build/test results and limitations. No Firebase yet.
 7. Build until actual success or document a concrete blocker. Do not call a source commit a finished APK.
 
-## Known deployment blocker
-Previous cloud workflow passed JS/Python syntax and mocked gateway tests, but HF_TOKEN was empty in Actions. Owner must add a write-scoped HF_TOKEN secret for the existing Space. Other five secrets were present in the previous workflow. Do not copy any credentials into code. Confirm CPU Basic Docker hardware. Use secure secret storage only.
+## Railway deployment
+Railway hosts the API. Configure GROQ_API_KEY and optional backup keys and plan passwords in Railway Variables. No HF_TOKEN required.
