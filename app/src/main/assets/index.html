@@ -294,7 +294,7 @@ body.theme-light .toast{background:#292622;color:white}
 @media(max-width:360px){.composer-toolbar{gap:4px}.composer-toolbar .tool-chip{font-size:10px;padding:8px 6px}.composer-toolbar .tool-chip span+span{display:none}.composer.compact-input{grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:3px}}
 @media(prefers-reduced-motion:reduce){.fresh-message *{animation:none!important}}body.reduced .fresh-message *{animation:none!important}
 
-.html-preview{display:block;width:100%;height:min(65dvh,650px);min-height:320px;background:#fff;border:1px solid var(--line);border-radius:16px;}.preview-toolbar{display:flex;gap:8px;}.preview-toolbar button{flex:1}.plan-password{width:100%;padding:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:12px;font:inherit}.code-chat-row{min-height:68px}.code-workspace .primary{min-height:56px}.preview-modal img{max-width:100%;max-height:75dvh;object-fit:contain}.code-tools button{min-width:44px;min-height:44px}.library-grid{gap:8px}.plan-card{animation:pop .2s ease-out}</style>
+.html-preview{display:block;width:100%;height:min(65dvh,650px);min-height:320px;background:#fff;border:1px solid var(--line);border-radius:16px;}.preview-toolbar{display:flex;gap:8px;}.preview-toolbar button{flex:1}.plan-password{width:100%;padding:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:12px;font:inherit}.code-chat-row{min-height:68px}.code-workspace .primary{min-height:56px}.preview-modal img{max-width:100%;max-height:75dvh;object-fit:contain}.code-tools button{min-width:44px;min-height:44px}.library-grid{gap:8px}.plan-card{animation:pop .2s ease-out}.workspace-summary{margin:0 0 10px}.workspace-files{min-height:58px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}.response-error{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.response-error p{margin:0 0 8px;color:var(--text)}.response-error button{width:100%;min-height:44px;justify-content:center}.code-collapsed{max-height:310px;overflow:hidden!important;mask-image:linear-gradient(#000 87%,transparent)}.code-expand{display:block;border:0;border-top:1px solid var(--line);background:var(--panel);width:100%;min-height:44px;color:var(--accent);font:inherit;cursor:pointer}.model-option{min-height:76px;padding:14px 12px;align-items:center}.model-option .meta small{line-height:1.4;white-space:normal}.model-option.selected{box-shadow:inset 3px 0 var(--accent)}.code-chat-row{min-height:74px}.code-workspace .primary{border-radius:18px}.hero-sub{max-width:340px;text-align:center;line-height:1.5}.coding-hero .hero-title{font-size:clamp(28px,7vw,40px)}@media(prefers-reduced-motion:reduce){.workspace-files,.response-error,.code-expand{animation:none;transition:none}}</style>
 
 <style>
 .model-option .model-state{transition:color .22s,opacity .22s}.model-option.selected .model-state{color:var(--accent)}.sheet.open .option,.sheet.open .settings-card{animation:solune-enter .27s cubic-bezier(.2,.8,.2,1) both}.sheet.open .option:nth-child(2){animation-delay:25ms}.sheet.open .option:nth-child(3){animation-delay:45ms}.sheet.open .option:nth-child(4){animation-delay:60ms}.image-card,.code-card{animation:solune-enter .25s ease-out both}.thinking:not(.done){transition:opacity .2s}.model-option:active,.plan-action:active{transform:scale(.98)}.theme-card:focus-visible,.actionbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@keyframes solune-enter{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
@@ -478,11 +478,16 @@ try {
         if(!window.SoluneNative&&mode==='local')mode='cloud';
         const cloudBase=location.hostname==='solune-cloud-production.up.railway.app'?'':'https://solune-cloud-production.up.railway.app';
         let cloudToken='',cloudUsage=null;
-        try{cloudToken=sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
+        try{cloudToken=localStorage.getItem('solune-cloud-session')||sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
         const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
-        async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));const data=await r.json();if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Server error '+r.status);}return data;}
-        function setCloudPlan(p,token){plan=p;cloudToken=token||'';try{sessionStorage.setItem('solune-cloud-session',cloudToken)}catch(e){};if(p==='free'&&selectedModel==='opal')selectedModel='marble';if(p==='free'&&!permitted(task,skill)){task='chat';skill='';}save('marble15-plan',p);persist();updateControls();}
-        async function syncCloudPlan(){try{let session=await cloudJSON('/v1/session',{method:'POST'});setCloudPlan(session.plan,session.token);cloudUsage=await cloudJSON('/v1/usage');}catch(e){if(!cloudToken)setCloudPlan('free','');}}
+        async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));let data;try{data=await r.json();}catch(e){throw Error('Cloud service unavailable. Try again later.');}if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Server error '+r.status);}return data;}
+        function setCloudPlan(p,token){plan=p;cloudToken=token||'';try{localStorage.setItem('solune-cloud-session',cloudToken);sessionStorage.setItem('solune-cloud-session',cloudToken)}catch(e){};if(p==='free'&&selectedModel==='opal')selectedModel='marble';if(p==='free'&&!permitted(task,skill)){task='chat';skill='';}save('marble15-plan',p);persist();updateControls();}
+        let cloudSync=null;
+        async function syncCloudPlan(){
+            if(cloudSync)return cloudSync;
+            cloudSync=(async()=>{try{let session;try{session=await cloudJSON('/v1/session',{method:'POST'});}catch(e){if(cloudToken)throw e;session=await cloudJSON('/v1/session',{method:'POST'});}setCloudPlan(session.plan,session.token);cloudUsage=await cloudJSON('/v1/usage');}catch(e){if(!cloudToken)setCloudPlan('free','');}finally{cloudSync=null;}})();
+            return cloudSync;
+        }
         let settings = Object.assign({ theme: read('marble15-theme', 'dark'), haptic: true, compact: false, reducedMotion: false, fullChat: false, font: 'default', keepAwake: false, notifyDone: false, language: 'auto' }, read('marble15-settings', {}));
         let api = read('marble15-api', { url: '', model: '' });
         let draft = read('marble15-draft', '');
@@ -665,7 +670,7 @@ try {
             tools.append(action('copy','Copy',()=>copy(code)),action('download','Download file',()=>download(code,name,ext==='html'?'text/html':ext==='svg'?'image/svg+xml':'text/plain')));
             if(ext==='html'||/^\s*(?:<!doctype\s+html|<html\b|<body\b|<style\b)/i.test(code))tools.append(action('play','Preview HTML',()=>openHtmlPreview(code)));
             const svg=getSVG(code);if(svg)tools.append(action('image','Preview SVG',()=>togglePreview(svgEncode(svg),'SVG')));
-            top.append(tools);box.append(top);const pre=newEl('pre');pre.innerHTML=codeHighlight(code);box.append(pre);
+            top.append(tools);box.append(top);const pre=newEl('pre');pre.innerHTML=codeHighlight(code);box.append(pre);if(code.split('\n').length>22){pre.classList.add('code-collapsed');const more=newEl('button','code-expand','Show full code');more.onclick=()=>{const short=pre.classList.toggle('code-collapsed');more.textContent=short?'Show full code':'Collapse code';};box.append(more);}
             if(svg&&ext==='svg')box.append(imageCard(svg));return box;
         }
         function buildTable(lines) { const wrap = newEl('div', 'table-wrap'); const table = document.createElement('table'); const rows = lines.map(l => l.trim().replace(/^\||\|$/g, '').split('|').map(x => x.trim())); if (rows.length < 2)
@@ -768,8 +773,7 @@ try {
                 }
                 const body = newEl('div', 'assist-body');
                 renderAnswer(body, m.content || '', m.task, !m.pending, m.demo);
-                if (m.error)
-                    body.append(newEl('p', '', `<span style="color:#ff8f8f">${esc(m.error)}</span>`));
+                if(m.error){const e=newEl('div','response-error');e.append(newEl('p','',esc(m.error)));const b=newEl('button','card-btn',icon('retry')+'<span>Try again</span>');b.onclick=()=>retry(m);e.append(b);body.append(e);}
                 if(m.qualityWarning) body.append(newEl('p','language-warning','The response was incomplete. Try Solune Marble or Solune Opal.'));
                 if(m.languageWarning) body.append(newEl('p','language-warning','The response may not match your requested language.'));
                 as.append(body);
@@ -779,6 +783,18 @@ try {
                 wrap.append(as);
             }
             return wrap;
+        }
+        function codingFiles(c){
+            const files=new Map();
+            for(const m of c.messages){if(m.role!=='assistant'||m.pending||m.error)continue;
+                for(const x of String(m.content||'').matchAll(/\x60\x60\x60([^\n]*)\n([\s\S]*?)\x60\x60\x60/g)){
+                    const info=x[1].trim().split(/\s+/);const lang=(info[0]||'text').toLowerCase();const name=info[1]||('snippet.'+({html:'html',javascript:'js',js:'js',python:'py',css:'css',svg:'svg',typescript:'ts',json:'json'}[lang]||'txt'));files.set(name,{info:lang+' '+name,body:x[2],name});
+                }
+            }
+            const box=newEl('div','workspace-summary');
+            const b=newEl('button','option workspace-files',icon('code')+'<div class="meta"><b>Workspace files</b><small>'+files.size+' latest files · coding mode</small></div>'+icon('chevron'));
+            b.onclick=()=>openSheet('Workspace files',body=>{if(!files.size)body.append(newEl('p','helper','Generated files will appear here. Ask for a complete named file.'));for(const file of files.values())body.append(codeCard(file.info,file.body));});
+            box.append(b);return box;
         }
         function activeArtifacts() { const images = [], codes = []; chats.forEach(c => c.messages.forEach(m => { if (m.role !== 'assistant')
             return; const svg = getSVG(m.content); if (svg)
@@ -821,7 +837,7 @@ try {
             if (show) {
                 let x = SKILLS.find(x => x.id === skill);
                 pill.innerHTML = icon((x === null || x === void 0 ? void 0 : x.icon) || (task === 'code' ? 'code' : 'image')) + '<span>' + esc(x ? '/' + x.id : taskNames[task]) + '</span>';
-                pill.append(action('close', 'Remove skill', () => { skill = ''; task = 'chat'; updateControls(); persist(); }));
+                pill.append(action('close', 'Remove skill', () => { skill='';task=current&&current.kind==='code'?'code':'chat';updateControls();persist(); }));
             }
             document.documentElement.style.setProperty('--tab-index', String(tabs.findIndex(t => t[0] === view)));
             for (const b of document.querySelectorAll('.tabbtn')) {
@@ -845,15 +861,15 @@ try {
                     const logo = newEl('button', 'logo-big', logoSvg);
                     logo.setAttribute('aria-label', 'Solune logo');
                     on(logo, 'click', secretTap);
-                    const title = newEl('h1', 'hero-title', 'What shall we create?');
-                    const sub = newEl('div', 'hero-sub', 'Solune · ' + activeModel().name);
+                    const title = newEl('h1','hero-title',task==='code'?'What shall we build?':task==='image'?'Imagine something.':'What shall we create?');
+                    const sub=newEl('div','hero-sub',activeModel().name+' · '+(task==='code'?'Coding workspace':task==='image'?'SVG studio':activeModel().desc));
                     const row = newEl('div', 'hero-row');
                     row.append(chip(icon('brain'), 'Mode', depthNames[depth]), chip(icon(mode === 'demo' ? 'info' : 'brain'), 'Engine', mode==='cloud'?'cloud':mode === 'demo' ? 'demo' : ready ? 'local' : mode === 'api' ? 'api' : 'Not loaded'));
                     const actions = newEl('div', 'hero-actions');
                     [['Explain a topic', 'Explain how a neural network works in simple terms', 'chat'], ['Write code', 'Build an HTML stopwatch with start, pause and reset', 'code'], ['Create SVG', 'Minimalist poster: mountains, sunset, soft light', 'image']].forEach(([a, p, t]) => { let b = newEl('button', 'card-btn', `<div><b>${esc(a)}</b><small>${t === 'image' ? 'Vector illustration' : t === 'code' ? 'Code with preview' : 'General chat'}</small></div>`); on(b, 'click', () => { task = t; $('prompt').value = p; resizePrompt(); render(); $('prompt').focus(); }); actions.append(b); });
                     const start = planPill();
                     start.classList.add('start');
-                    inner.append(logo, title, sub, start, actions);
+                    inner.append(logo,title,sub,start,actions);if(task==='code')hero.classList.add('coding-hero');
                     if (mode === 'local' && !ready) {
                         let e = newEl('button', 'plan-pill', loading ? 'Loading model…' : 'Set up engine');
                         e.onclick = openEngine;
@@ -865,6 +881,7 @@ try {
                 else {
                     feed.classList.add('with-messages');
                     const thread = newEl('div', 'thread');
+                    if(current.kind==='code')thread.append(codingFiles(current));
                     current.messages.forEach(m => thread.append(addMessage(m)));
                     feed.append(thread);
                     queueMicrotask(scrollIfNearBottom);
@@ -892,7 +909,7 @@ try {
                     g.append(newEl('div', 'empty-note', 'Your generated illustrations appear here.'));
                 lib.append(g);
                 const btn = newEl('button', 'card-btn primary', `<div><b>Create image</b><small>Start a chat in SVG mode</small></div>`);
-                on(btn, 'click', () => { view = 'chat'; task = 'image'; ensureCurrent(); render(); $('prompt').focus(); });
+                on(btn,'click',()=>{current=null;view='chat';task='image';skill='';$('prompt').value='';resizePrompt();render();$('prompt').focus();});
                 lib.append(btn);
                 feed.append(lib);
             }
@@ -1377,6 +1394,8 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 stop();
                 return;
             }
+            if(mode==='cloud'&&cloudSync)await cloudSync;
+            if(busy)return;
             let q = $('prompt').value.trim();
             if (!validPrompt() || !q)
                 return;
@@ -1392,7 +1411,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     return;
                 }
             }
-            if (!chosen && task === 'chat' && /(?:нарисуй|создай\s+(?:картин|изображ)|сгенерируй\s+(?:картин|изображ)|draw an? |generate an? image)/i.test(q))
+            if (!chosen && resolvedTask === 'chat' && /(?:нарисуй|создай\s+(?:картин|изображ)|сгенерируй\s+(?:картин|изображ)|draw an? |generate an? image)/i.test(q))
                 resolvedTask = 'image';
             if (!permitted(resolvedTask, chosen)) {
                 openPlans();
@@ -1506,7 +1525,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('Solune',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
                 let thread = $('feed').querySelector('.thread');
-                if(view==='chat' && current===owner && thread && thread.lastElementChild){thread.lastElementChild.replaceWith(addMessage(assistantMsg));updateControls();renderHistory();}else render();
+                if(view==='chat' && current===owner && thread && thread.lastElementChild){thread.lastElementChild.replaceWith(addMessage(assistantMsg));const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else render();
                 if (stick)
                     scrollToBottom(true);
                 if (error && error !== 'Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
