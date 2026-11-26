@@ -1,0 +1,38 @@
+name: Deploy Solune Cloud
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['cloud/**', '.github/workflows/huggingface.yml']
+permissions:
+  contents: read
+concurrency:
+  group: solune-cloud-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'huggingface_hub>=0.27,<2'
+      - name: Sync Space files
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          token = os.environ.get("HF_TOKEN")
+          if not token:
+              raise SystemExit("Add HF_TOKEN in repository Actions secrets first.")
+          HfApi(token=token).upload_folder(
+              folder_path="cloud",
+              repo_id="fggh567/Solune",
+              repo_type="space",
+              allow_patterns=["app.py", "README.md", "requirements.txt"],
+              commit_message="Sync Solune Cloud from GitHub",
+          )
+          PY
