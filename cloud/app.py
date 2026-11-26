@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 app=FastAPI(docs_url=None,redoc_url=None)
 app.add_middleware(CORSMiddleware,allow_origins=["https://solune.local"],allow_methods=["GET","POST"],allow_headers=["Authorization","Content-Type"])
 MODELS={"paper":"openai/gpt-oss-20b","marble":"qwen/qwen3.8-27b","opal":"openai/gpt-oss-120b"}
+PROFILE_NAMES={"paper":"Solune Paper 2.6","marble":"Solune Marble 2.1","opal":"Solune Opal 1.5"}
 FRACTION={"free":.30,"pro":.60,"dev":1.0}
 DAY_TOKENS=int(os.getenv("GROQ_DAY_TOKENS","200000"))
 DAY_REQUESTS=int(os.getenv("GROQ_DAY_REQUESTS","1000"))
@@ -32,7 +33,7 @@ def principal(req):
         base=".".join((p,exp,nonce))
         if p in FRACTION and int(exp)>time.time() and hmac.compare_digest(sig,hmac.new(SIGN,base.encode(),hashlib.sha256).hexdigest()): return p,nonce
     except (ValueError,TypeError): pass
-    raise HTTPException(401,"Сессия истекла. Повторно активируйте тариф.")
+    raise HTTPException(401,"Session expired. Activate your plan again.")
 def prune():
     now=time.time()
     while ledger and ledger[0]["at"]<now-86400: ledger.popleft()
@@ -68,10 +69,10 @@ def unlock(q:Unlock,req:Request):
     with lock:
         now=time.time()
         while attempts and attempts[0]<now-60: attempts.popleft()
-        if len(attempts)>=12: raise HTTPException(429,"Слишком много попыток. Повторите через минуту.")
+        if len(attempts)>=12: raise HTTPException(429,"Too many attempts. Try again in a minute.")
         attempts.append(now)
     expected=PASSWORDS.get(q.plan,"")
-    if not expected or not hmac.compare_digest(q.password.encode(),expected.encode()): raise HTTPException(403,"Неверный пароль или тариф не настроен.")
+    if not expected or not hmac.compare_digest(q.password.encode(),expected.encode()): raise HTTPException(403,"Incorrect password or plan unavailable.")
     return {"plan":q.plan,"token":sign(q.plan,identity)}
 @app.get("/v1/usage")
 def usage(req:Request):
@@ -81,7 +82,7 @@ def usage(req:Request):
         models={m:{"tokens_used":totals(m,identity)[0],"requests_used":totals(m,identity)[1],"tokens_limit":int(DAY_TOKENS*FRACTION[p]),"requests_limit":int(DAY_REQUESTS*FRACTION[p])} for m in MODELS}
         keys=[{"slot":i+1,"active":i==active,**v} for i,v in status.items()]
         # Copy under lock; no credentials ever included.
-        return json.loads(json.dumps({"plan":p,"models":models,"keys":keys,"window":"rolling_24h","note":"Учёт по сессии с момента запуска сервера; при перезапуске статистика сбрасывается. Заголовки Groq: запросы в сутки, токены в минуту. Квоты организаций не суммируются."}))
+        return json.loads(json.dumps({"plan":p,"models":models,"keys":keys,"window":"rolling_24h","note":"Session usage since server startup; resets on restart. Connection statistics are last observed limits, not additive balances."}))
 def rate_headers(r,slot,model):
     fields=("limit-requests","remaining-requests","reset-requests","limit-tokens","remaining-tokens","reset-tokens")
     with lock:
@@ -91,17 +92,18 @@ def rate_headers(r,slot,model):
 def chat(q:Chat, req:Request):
     global active
     plan,identity=principal(req)
-    if q.model not in MODELS or q.task not in ("chat","code","image","deep"): raise HTTPException(400,"Неизвестная модель или режим.")
-    if plan=="free" and (q.model=="opal" or q.task in ("code","deep")): raise HTTPException(403,"Нужен Pro или Dev.")
+    if q.model not in MODELS or q.task not in ("chat","code","image","deep"): raise HTTPException(400,"Unknown model or mode.")
+    if plan=="free" and (q.model=="opal" or q.task in ("code","deep")): raise HTTPException(403,"Pro or Dev required.")
     msgs=[]
     for m in q.messages:
-        if m.get("role") not in ("system","user","assistant") or not isinstance(m.get("content"),str): raise HTTPException(400,"Некорректное сообщение.")
+        if m.get("role") not in ("system","user","assistant") or not isinstance(m.get("content"),str): raise HTTPException(400,"Invalid message.")
         msgs.append({"role":m["role"],"content":m["content"]})
-    if sum(len(m["content"]) for m in msgs)>24000: raise HTTPException(413,"Контекст слишком длинный.")
+    msgs.insert(0,{"role":"system","content":"You are "+PROFILE_NAMES[q.model]+", a Solune assistant profile powered by a third-party AI model. Use the profile name in normal conversation, and answer provenance questions truthfully. Do not claim Solune trained the underlying model."})
+    if sum(len(m["content"]) for m in msgs)>24000: raise HTTPException(413,"Context is too long.")
     max_tokens=min(q.max_tokens,4096 if plan!="free" else 1536)
     # Conservative reservation, reconciled with actual provider usage.
     reserved=sum(len(m["content"].encode("utf-8"))+24 for m in msgs)+max_tokens+128
-    if not slots.acquire(blocking=False): raise HTTPException(429,"Сервер занят. Попробуйте позже.")
+    if not slots.acquire(blocking=False): raise HTTPException(429,"Server busy. Try again later.")
     entry=None
     upstream=None
     try:
@@ -109,8 +111,8 @@ def chat(q:Chat, req:Request):
             prune()
             used,count=totals(q.model,identity)
             global_used,global_count=totals(q.model)
-            if used+reserved>DAY_TOKENS*FRACTION[plan] or count>=DAY_REQUESTS*FRACTION[plan]: raise HTTPException(429,"Дневной лимит тарифа исчерпан.")
-            if global_used+reserved>DAY_TOKENS or global_count>=DAY_REQUESTS: raise HTTPException(429,"Сервер занят. Попробуйте позже.")
+            if used+reserved>DAY_TOKENS*FRACTION[plan] or count>=DAY_REQUESTS*FRACTION[plan]: raise HTTPException(429,"Plan limit reached.")
+            if global_used+reserved>DAY_TOKENS or global_count>=DAY_REQUESTS: raise HTTPException(429,"Server busy. Try again later.")
             entry={"at":time.time(),"model":q.model,"tokens":reserved,"identity":identity}
             ledger.append(entry)
             order=[active]+[i for i in range(len(KEYS)) if i!=active]
@@ -121,7 +123,7 @@ def chat(q:Chat, req:Request):
             try:
                 upstream=requests.post("https://api.groq.com/openai/v1/chat/completions",headers={"Authorization":"Bearer "+KEYS[i]},json=payload,stream=True,timeout=(10,90))
             except requests.RequestException:
-                raise HTTPException(502,"Не удалось связаться с Groq.")
+                raise HTTPException(502,"Cloud connection unavailable.")
             if upstream.status_code==401:
                 with lock: status[i]["state"]="invalid_key"
                 upstream.close();upstream=None
@@ -129,11 +131,11 @@ def chat(q:Chat, req:Request):
             rate_headers(upstream,i,q.model)
             with lock: active=i
             break
-        if upstream is None: raise HTTPException(503,"Нет рабочего ключа Groq. Проверьте секреты.")
+        if upstream is None: raise HTTPException(503,"Cloud service unavailable.")
         if upstream.status_code==429:
             retry=upstream.headers.get("retry-after","")
-            raise HTTPException(429,"Сервер занят. Попробуйте позже.",headers={"Retry-After":retry} if retry else None)
-        if not upstream.ok: raise HTTPException(502,f"Groq отклонил запрос (HTTP {upstream.status_code}).")
+            raise HTTPException(429,"Server busy. Try again later.",headers={"Retry-After":retry} if retry else None)
+        if not upstream.ok: raise HTTPException(502,f"Cloud request failed (HTTP {upstream.status_code}).")
     except BaseException:
         if upstream is not None: upstream.close()
         with lock:
@@ -160,9 +162,9 @@ def chat(q:Chat, req:Request):
                     if text: yield "data: "+json.dumps({"choices":[{"delta":{"content":text}}]},ensure_ascii=False)+"\n\n"
                     if choices[0].get("finish_reason")=="length":
                         yield "data: "+json.dumps({"truncated":True})+"\n\n"
-            yield "data: "+json.dumps({"error":"Поток ответа завершился неожиданно."},ensure_ascii=False)+"\n\n"
+            yield "data: "+json.dumps({"error":"Response stream ended unexpectedly."},ensure_ascii=False)+"\n\n"
         except requests.RequestException:
-            yield "data: "+json.dumps({"error":"Соединение с Groq прервано."},ensure_ascii=False)+"\n\n"
+            yield "data: "+json.dumps({"error":"Cloud connection interrupted."},ensure_ascii=False)+"\n\n"
         finally:
             upstream.close()
             with lock:
