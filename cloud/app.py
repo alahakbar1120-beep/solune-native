@@ -1,5 +1,4 @@
 import json
-import threading
 import gradio as gr
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -42,7 +41,6 @@ def generate(name, prompt, history_json, max_tokens):
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     tokenizer.truncation_side = "left"
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=1024)
-    model = model.to("cuda")
     with torch.inference_mode():
         output = model.generate(**inputs, max_new_tokens=limit, do_sample=False, repetition_penalty=1.08, pad_token_id=tokenizer.eos_token_id)
     return tokenizer.decode(output[0, inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
