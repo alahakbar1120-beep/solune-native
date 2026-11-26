@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['cloud/**', '.github/workflows/huggingface.yml']
+    paths: ['cloud/**', 'app/src/main/assets/index.html', '.github/workflows/huggingface.yml']
 permissions:
   contents: read
 concurrency:
@@ -12,27 +12,80 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install 'huggingface_hub>=0.27,<2'
-      - name: Sync Space files
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare and check UI
+        run: |
+          cp app/src/main/assets/index.html cloud/index.html
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("cloud/index.html").read_text()
+          Path("/tmp/solune.js").write_text(s.split("<script>",1)[1].rsplit("</script>",1)[0])
+          PY
+          node --check /tmp/solune.js
+          python -m py_compile cloud/app.py
+      - run: pip install 'huggingface_hub>=0.27,<2' -r cloud/requirements.txt httpx
+      - name: Test gateway without real API keys
+        run: |
+          cd cloud
+          python - <<'PY'
+          import os
+          from unittest.mock import patch
+          from fastapi.testclient import TestClient
+          os.environ.update(GROQ_API_KEY="fake-1",GROQ_API_KEY_2="fake-2",SOLUNE_PRO_PASSWORD="test-pro")
+          import app
+          c=TestClient(app.app)
+          assert c.get("/health").json()["configured_keys"]==2
+          session=c.post("/v1/session").json()
+          h={"Authorization":"Bearer "+session["token"]}
+          q={"model":"opal","messages":[{"role":"user","content":"hello"}],"max_tokens":32}
+          assert c.post("/v1/chat/completions",json=q,headers=h).status_code==403
+          assert c.post("/v1/unlock",json={"plan":"pro","password":"wrong"},headers=h).status_code==403
+          q["model"]="paper"
+          class Reply:
+              def __init__(self,status): self.status_code=status; self.ok=status<400; self.headers={}
+              def close(self): pass
+              def iter_lines(self,**kwargs):
+                  yield b'data: {"choices":[{"delta":{"content":"hello"}}]}'
+                  yield b'data: {"usage":{"total_tokens":42}}'
+                  yield b'data: [DONE]'
+          with patch("app.requests.post",side_effect=[Reply(401),Reply(200)]) as p:
+              r=c.post("/v1/chat/completions",json=q,headers=h)
+              assert r.status_code==200 and "[DONE]" in r.text and "hello" in r.text and p.call_count==2
+          with patch("app.requests.post",return_value=Reply(429)) as p:
+              r=c.post("/v1/chat/completions",json=q,headers=h)
+              assert r.status_code==429 and p.call_count==1
+          assert c.get("/v1/usage",headers=h).json()["models"]["paper"]["tokens_used"]==42
+          print("Gateway mock tests passed")
+          PY
+      - name: Sync Space files and secrets
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
+          SOLUNE_PRO_PASSWORD: ${{ secrets.SOLUNE_PRO_PASSWORD }}
+          SOLUNE_DEV_PASSWORD: ${{ secrets.SOLUNE_DEV_PASSWORD }}
         run: |
           python - <<'PY'
           import os
           from huggingface_hub import HfApi
-          token = os.environ.get("HF_TOKEN")
-          if not token:
-              raise SystemExit("Add HF_TOKEN in repository Actions secrets first.")
-          HfApi(token=token).upload_folder(
-              folder_path="cloud",
-              repo_id="fggh567/Solune",
-              repo_type="space",
-              allow_patterns=["app.py", "README.md", "requirements.txt"],
-              commit_message="Sync Solune Cloud from GitHub",
-          )
+          token=os.environ.get("HF_TOKEN")
+          if not token or not os.environ.get("GROQ_API_KEY"):
+              raise SystemExit("Configure HF_TOKEN and GROQ_API_KEY in Actions secrets.")
+          api=HfApi(token=token)
+          repo="fggh567/Solune"
+          for key in ["GROQ_API_KEY","GROQ_API_KEY_2","GROQ_API_KEY_3","SOLUNE_PRO_PASSWORD","SOLUNE_DEV_PASSWORD"]:
+              value=os.environ.get(key)
+              if value:
+                  api.add_space_secret(repo_id=repo,key=key,value=value)
+          api.upload_folder(folder_path="cloud",repo_id=repo,repo_type="space",allow_patterns=["app.py","README.md","requirements.txt","Dockerfile","index.html"],commit_message="Deploy Solune Cloud gateway")
+          print("Space files synchronized")
           PY
