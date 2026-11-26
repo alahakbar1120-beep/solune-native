@@ -476,7 +476,7 @@ try {
         let mode = read('solune-mode-v2', 'cloud');
         if (!['local','api','demo','cloud'].includes(mode)) mode='cloud';
         if(!window.SoluneNative&&mode==='local')mode='cloud';
-        const cloudBase=location.hostname==='fggh567-solune.hf.space'?'':'https://fggh567-solune.hf.space';
+        const cloudBase=location.hostname==='solune-cloud-production.up.railway.app'?'':'https://solune-cloud-production.up.railway.app';
         let cloudToken='',cloudUsage=null;
         try{cloudToken=sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
         const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
