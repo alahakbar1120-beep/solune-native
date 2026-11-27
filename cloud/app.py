@@ -12,6 +12,8 @@ MODELS={"paper":os.getenv("NVIDIA_PAPER_MODEL","nvidia/nemotron-3.5-bolt-e4b"),"
 CODE_MODEL=os.getenv("NVIDIA_CODE_MODEL","poolside/laguna-xs-2.1")
 API_URL="https://integrate.api.nvidia.com/v1/chat/completions"
 PROFILE_NAMES={"paper":"Solune Paper 2.8","marble":"Solune Marble 2.5","opal":"Solune Opal 2.1"}
+PROFILE_IDS={"paper":"solune-paper-2.8","marble":"solune-marble-2.5","opal":"solune-opal-2.1"}
+PROFILE_BY_ID={v:k for k,v in PROFILE_IDS.items()}
 FRACTION={"free":.20,"pro":.50,"dev":1.0}
 DAY_TOKENS=int(os.getenv("SOLUNE_DAY_TOKENS","200000"))
 DAY_REQUESTS=int(os.getenv("SOLUNE_DAY_REQUESTS","1000"))
@@ -57,7 +59,10 @@ class Chat(BaseModel):
 def index():
     return FileResponse(Path(__file__).with_name("index.html"),headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"})
 @app.get("/health")
-def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"provider":"nvidia","version":"2.4"}
+def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"version":"2.4"}
+@app.get("/v1/models")
+def profiles():
+    return {"object":"list","data":[{"id":PROFILE_IDS[k],"name":name,"object":"model","kind":"assistant_profile"} for k,name in PROFILE_NAMES.items()]}
 @app.post("/v1/session")
 def session(req:Request):
     if req.headers.get("Authorization"):
@@ -100,16 +105,18 @@ PROFILE_STYLE={
 def identity_answer(q, text):
     t=re.sub(r"\s+"," ",text.strip().lower()).rstrip("?!., ")
     name=PROFILE_NAMES[q.model]
+    profile_id=PROFILE_IDS[q.model]
     # Handle self-identification, not general questions about other AI models.
     identity=re.search(r"(?:какая ты модель|какой ты модели|какая у тебя модель|что ты за модель|ты какая модель|кто ты|ты кто|как тебя зовут|хто ти|яка ти модель|who are you|what model are you|which model are you|what is your name)",t)
     provenance=re.search(r"(?:кто тебя создал|кто тебя разработал|на ч[её]м ты основан|на какой модели ты основан|твоя базовая модель|сво[яю] базов[аую]+ модель|what are you based on|what is your base model|who created you|who made you|your underlying model|your base model|are you gpt[- ]?4|ты (?:gpt|гпт)[- ]?4)",t)
-    if not (identity or provenance):return None
+    id_question=re.search(r"(?:id твоей модели|id модели|айди модели|ид модели|твой id|идентификатор модели|your model id|your id|model identifier|model id)",t)
+    if not (identity or provenance or id_question):return None
     # Avoid hijacking normal multi-part questions and quoted/code examples.
     if len(t)>320 or re.search(r"\x60|«|»|напиши код|переведи|translate|write code",t):return None
     ru=bool(re.search(r"[а-яёіїєґ]",t))
     if provenance or re.search(r"реально|на самом деле|не ври|system prompt|underlying|real model|системно",t):
         return ("Я — "+name+", профиль ассистента Solune. Использую стороннюю языковую модель; Solune не обучал её с нуля. Техническая конфигурация не отображается в чате.") if ru else ("I'm "+name+", a Solune assistant profile powered by a third-party language model. Solune did not train the underlying weights from scratch. Technical configuration is not displayed in chat.")
-    return ("Я — "+name+".") if ru else ("I'm "+name+".")
+    return ("Я — "+name+". ID профиля: "+profile_id+".") if ru else ("I'm "+name+". Profile ID: "+profile_id+".")
  
 def svg_valid(text):
     match=re.search(r"<svg\b[\s\S]*?</svg\s*>",text,re.I)
@@ -208,6 +215,7 @@ def complete(model,identity,plan,messages,budget,effort="medium",search=False,co
 @app.post("/v1/chat/completions")
 def chat(q:Chat,req:Request):
     plan,identity=principal(req)
+    q.model=PROFILE_BY_ID.get(q.model,q.model)
     skills=set(q.skills)
     if not skills.issubset({"img","code","deep","instant","web","research"}):raise HTTPException(400,"Unknown skill.")
     if {"code","img"}<=skills:raise HTTPException(400,"Code and image are separate tasks.")
@@ -236,7 +244,7 @@ def chat(q:Chat,req:Request):
     if sum(len(m["content"]) for m in msgs)>48000:raise HTTPException(413,"Context is too long.")
     name=PROFILE_NAMES[q.model]
     backend=CODE_MODEL if q.task=="code" else MODELS[q.model]
-    instructions="You are "+name+", a Solune assistant profile. "+PROFILE_STYLE[q.model]+" Identify yourself as "+name+". Do not introduce raw backend identifiers or provider implementation details in chat. If asked about provenance, explain accurately that this is a Solune profile powered by third-party AI, not independently trained weights. Do not claim that Solune trained or created the underlying model. Follow the user's language. Do not invent tool use, sources, or capabilities. Be age-appropriate and refuse dangerous assistance."
+    instructions="You are "+name+", a Solune assistant profile. "+PROFILE_STYLE[q.model]+" Identify yourself as "+name+". Your public Solune profile ID is "+PROFILE_IDS[q.model]+". It is a product profile identifier, not a claim of a newly trained model. Do not introduce raw backend identifiers or provider implementation details in chat. If asked about provenance, explain accurately that this is a Solune profile powered by third-party AI, not independently trained weights. Do not claim that Solune trained or created the underlying model. Follow the user's language. Do not invent tool use, sources, or capabilities. Be age-appropriate and refuse dangerous assistance."
     if q.task=="code":instructions+=" Return complete runnable code with language and filename on each fenced block. Never omit code with placeholders, ellipses or comments such as rest unchanged. For revision return complete changed files. Keep explanations brief."
     if q.task=="image":instructions+=" Create a complete original SVG illustration matching the prompt. Use a viewBox, coherent composition, color palette, layers, gradients and precise paths. No external resources, scripts, event handlers or foreignObject. Return ONLY valid SVG XML."
     if q.task in ("web","research"):instructions+=" Use only the supplied search evidence for current claims. Include usable source URLs where present; never invent links. State gaps and distinguish evidence from inference."
