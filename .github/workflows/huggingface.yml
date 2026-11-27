@@ -49,36 +49,38 @@ jobs:
           assert c.post("/v1/chat/completions",json=q,headers=h).status_code==403
           assert c.post("/v1/unlock",json={"plan":"pro","password":"wrong"},headers=h).status_code==403
           q["model"]="paper"
-          class Reply:
-              def __init__(self,status): self.status_code=status; self.ok=status<400; self.headers={}
+          class Complete:
+              def __init__(self,content="hello",finish="stop",status=200,tokens=42):
+                  self.status_code=status; self.ok=status<400; self.headers={}; self.content=content; self.finish=finish; self.tokens=tokens
               def close(self): pass
-              def iter_lines(self,**kwargs):
-                  yield b'data: {"choices":[{"delta":{"content":"hello"}}]}'
-                  yield b'data: {"usage":{"total_tokens":42}}'
-                  yield b'data: [DONE]'
-          with patch("app.requests.post",return_value=Reply(200)) as p:
+              def json(self):return {"choices":[{"message":{"content":self.content},"finish_reason":self.finish}],"usage":{"total_tokens":self.tokens}}
+          with patch("app.requests.post",return_value=Complete()) as p:
               r=c.post("/v1/chat/completions",json=q,headers=h)
               assert r.status_code==200 and "[DONE]" in r.text and "hello" in r.text and p.call_count==1
-          with patch("app.requests.post",return_value=Reply(429)) as p:
+              assert p.call_args.kwargs["json"]["stream"] is False
+              assert r.text.index("Thinking")<r.text.index("Answer ready")<r.text.index("hello")
+          with patch("app.requests.post",return_value=Complete(status=429)) as p:
               r=c.post("/v1/chat/completions",json=q,headers=h)
-              assert r.status_code==429 and p.call_count==1
-          assert c.get("/v1/usage",headers=h).json()["models"]["paper"]["tokens_used"]==42
-          assert app.FRACTION == {"free":.20,"pro":.50,"dev":1.0}
-          assert len(set(app.MODELS.values()))==3
-          assert c.get("/v1/usage",headers=h).json()["models"]["paper"]["tokens_limit"]==int(app.DAY_TOKENS*.20)
+              assert '"status": 429' in r.text and p.call_count==1
+          u=c.get("/v1/usage",headers=h).json()
+          assert u["tokens_used"]==42 and u["tokens_lifetime"]==42 and u["tokens_limit"]==100000
+          assert 86390<=u["reset_at"]-u["server_time"]<=86400
+          assert app.PLAN_LIMITS=={"free":100000,"pro":300000,"dev":None}
           def request(model,task="chat",question="Explain gravity",max_tokens=512):
               return {"model":model,"task":task,"messages":[{"role":"user","content":question}],"max_tokens":max_tokens}
+          with patch("app.requests.post",return_value=Complete(tokens=58)):
+              c.post("/v1/chat/completions",json=request("marble"),headers=h)
+          assert c.get("/v1/usage",headers=h).json()["tokens_used"]==100
           pro=c.post("/v1/unlock",json={"plan":"pro","password":"test-pro"},headers=h).json()
           hp={"Authorization":"Bearer "+pro["token"]}
+          assert c.get("/v1/usage",headers=hp).json()["tokens_limit"]==300000
+          assert c.get("/v1/usage",headers=hp).json()["tokens_used"]==100
           for model,name in app.PROFILE_NAMES.items():
               r=c.post("/v1/chat/completions",json=request(model,question="Who are you?"),headers=hp)
               assert name in r.text
-              with patch("app.requests.post",return_value=Reply(200)) as p:
+              with patch("app.requests.post",return_value=Complete()) as p:
                   r=c.post("/v1/chat/completions",json=request(model),headers=hp)
                   assert "[DONE]" in r.text and p.call_args.kwargs["json"]["model"]==app.MODELS[model]
-          class Complete(Reply):
-              def __init__(self,content,finish="stop"):super().__init__(200);self.content=content;self.finish=finish
-              def json(self):return {"choices":[{"message":{"content":self.content},"finish_reason":self.finish}],"usage":{"total_tokens":64}}
           with patch("app.requests.post",side_effect=[Complete("Draft answer"),Complete("Verified answer")]) as p:
               r=c.post("/v1/chat/completions",json=request("opal","deep"),headers=hp)
               assert "Verified answer" in r.text and "Reviewing reasoning" in r.text and p.call_count==2
@@ -91,15 +93,20 @@ jobs:
           with patch("app.requests.post",side_effect=[Complete(svg),Complete(svg)]) as p:
               r=c.post("/v1/chat/completions",json=request("marble","image"),headers=hp)
               assert "Checking SVG" in r.text and "circle" in r.text and p.call_count==2
-          class Truncated(Reply):
-              def iter_lines(self,**kwargs):
-                  yield b'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}'
-                  yield b'data: {"usage":{"total_tokens":60}}'
-                  yield b'data: [DONE]'
-          with patch("app.requests.post",side_effect=[Truncated(200),Complete(" continuation")]) as p:
+          with patch("app.requests.post",side_effect=[Complete("partial","length"),Complete(" continuation")]) as p:
               r=c.post("/v1/chat/completions",json=request("opal","code"),headers=hp)
-              assert "partial" in r.text and "continuation" in r.text and p.call_count==2
+              assert "partial continuation" in r.text and p.call_count==2
               assert p.call_args_list[0].kwargs["json"]["model"]==app.CODE_MODEL
+          with patch("app.requests.post",return_value=Complete(" remaining text")) as p:
+              r=c.post("/v1/chat/completions",json={**request("marble"),"continuation":True,"messages":[{"role":"user","content":"Write a story"},{"role":"assistant","content":"Already written"},{"role":"user","content":"Continue"}]},headers=hp)
+              assert " remaining text" in r.text and p.call_count==1
+              assert "ONLY the missing suffix" in p.call_args.kwargs["json"]["messages"][0]["content"]
+          assert app.merge_tail("abcdefghijk","abcdefghijk more")==" more"
+          identity=hp["Authorization"].split(".")[-2]
+          with app.lock,app.db:
+              app.db.execute("UPDATE usage SET start=? WHERE identity=?",(int(app.time.time())-86401,identity))
+          u=c.get("/v1/usage",headers=hp).json()
+          assert u["tokens_used"]==0 and u["tokens_lifetime"]>100 and u["reset_at"] is None
           with patch("app.requests.post",side_effect=[Complete("draft"),Complete("reviewed")]) as p:
               r=c.post("/v1/chat/completions",json={**request("marble","code"),"skills":["code","deep"]},headers=hp)
               assert "reviewed" in r.text and p.call_count==2
