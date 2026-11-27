@@ -927,7 +927,7 @@ try {
         function ensureCurrent(){const kind=view==='code'?'code':'chat';if(current&&current.kind===kind&&chats.includes(current))return current;const remembered=kind==='code'?codeMemory:chatMemory;if(remembered&&chats.includes(remembered)){current=remembered;return current;}const c={id:Date.now(),title:'New chat',kind,created:Date.now(),messages:[]};chats.unshift(c);current=c;if(kind==='code')codeMemory=c;else chatMemory=c;persist();return c;}
         function validPrompt(){const t=$('prompt').value.trim();return !!t;}
         function conversationView(){return view==='chat'||(view==='code'&&codeOpen&&studioTab==='chat');}
-        function updateComposer(){const focused=document.activeElement===$('prompt');const has=!!(current&&current.messages&&current.messages.length);const compact=false;$('composer').classList.toggle('compact-input',compact);$('sendBtn').disabled=!busy&&!validPrompt();}
+        function updateComposer(){$('composer').classList.remove('compact-input');$('sendBtn').disabled=!busy&&!validPrompt();}
         function normalizeModel(){if(view==='code'&&selectedModel==='paper')selectedModel='marble';if(view!=='code'&&selectedModel==='onyx')selectedModel='marble';if(mode!=='cloud'&&selectedModel==='onyx')selectedModel='marble';if(plan==='free'&&['opal','onyx'].includes(selectedModel))selectedModel='marble';}
         function updateControls() {
             normalizeModel();document.body.classList.toggle('studio-mode',view==='code');
@@ -1154,7 +1154,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     let snapshot;
                     if(!submitted){
                         snapshot=await cloudJSON('/v1/jobs',{method:'POST',body:JSON.stringify({id:m.remoteId,request:m.remoteRequest})});
-                        submitted=true;m.remoteAccepted=true;persist();
+                        submitted=true;m.remoteAccepted=true;delete m.remoteRequest;persist();
                     }else snapshot=await cloudJSON('/v1/jobs/'+m.remoteId);
                     failures=0;
                     updateWorkStatus(m,snapshot.stage,snapshot.plan);
@@ -1182,7 +1182,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         }
         async function runCloud(messages,max,refresh,taskType,chosen,ids=[]){
             if(!cloudToken)await syncCloudPlan();
-            const m=job.message;
+            const m=job.message;if(controller?.signal.aborted||job.cancelled)throw Error('Generation stopped.');
             m.remoteId=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
             m.remoteAccepted=false;m.cancelRequested=false;m.remotePrefix=job.prefix||'';
             m.remoteRequest={model:(MODELS[job.model]||activeModel()).id,messages,max_tokens:max,stream:true,continuation:!!job.continuation,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:generationDepth||depth};
@@ -1592,7 +1592,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             const continuation=arg&&arg.role==='assistant'?arg:null;
             if(continuation&&(busy||!current||current.messages.at(-1)!==continuation))return;
             if(busy){if(job&&current===job.owner)stop();else toast('A response is running in another chat. Open it to stop generation.');return;}
-            if(mode==='cloud'){preparingSend=true;try{if(cloudSync)await cloudSync;else if(!accountLinked)await syncCloudPlan();}finally{preparingSend=false;}if(!accountLinked){openAccount();return;}}
+            if(mode==='cloud'&&!accountLinked){preparingSend=true;try{if(cloudSync)await cloudSync;else await syncCloudPlan();}finally{preparingSend=false;}if(!accountLinked){openAccount();return;}}
             if(busy)return;
             let q=continuation?(current.messages.filter(m=>m.role==='user').at(-1)?.content||'Continue'): $('prompt').value.trim();
             if(!continuation&&(!validPrompt()||!q))
