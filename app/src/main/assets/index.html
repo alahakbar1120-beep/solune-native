@@ -479,7 +479,7 @@ try {
             chats = [];
         chats = chats.filter(c => c && typeof c === 'object');
         for (let c of chats) {
-            c.messages = (Array.isArray(c.messages) ? c.messages : []).filter(m => m).map(m => m.pending ? Object.assign(m,{pending:false,error:'Response interrupted when the app closed.'}) : m);
+            c.messages = (Array.isArray(c.messages) ? c.messages : []).filter(m => m).map(m => m.pending&&!m.remoteId ? Object.assign(m,{pending:false,error:'Response interrupted before server submission.'}) : m);
         }
         let currentId = read('marble15-current', null);
         let current=chats.find(c=>c.id===currentId)||chats[0]||null;
@@ -496,7 +496,7 @@ try {
         let cloudToken='',cloudUsage=null,accountLinked=false;
         try{cloudToken=localStorage.getItem('solune-cloud-session')||sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
         const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
-        async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));let data;try{data=await r.json();}catch(e){throw Error('Cloud service unavailable. Try again later.');}if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Server error '+r.status);}return data;}
+        async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));let data;try{data=await r.json();}catch(e){throw Error('Cloud service unavailable. Try again later.');}if(!r.ok){const e=Error(typeof data.detail==='string'?data.detail:'Server error '+r.status);e.status=r.status;throw e;}return data;}
         function setCloudPlan(p,token){plan=p;cloudToken=token||'';try{localStorage.setItem('solune-cloud-session',cloudToken);sessionStorage.setItem('solune-cloud-session',cloudToken)}catch(e){};if(p==='free'&&['opal','onyx'].includes(selectedModel))selectedModel='marble';if(p==='free'&&depth==='ultra')depth='high';if(p==='free'&&!permitted(task,skill)){task='chat';skill='';}save('marble15-plan',p);persist();updateControls();}
         let cloudSync=null;
         async function syncCloudPlan(){
@@ -816,7 +816,7 @@ try {
                 as.append(head);
                 if (m.pending) {
                     const th = newEl('div', 'thinking');
-                    th.innerHTML = `<span class="spinner"><i></i><i></i><i></i></span><span class="dots">${job&&job.message===m&&job.stage?esc(job.stage):m.task==='image'?'Creating SVG':m.task==='code'?'Coding':'Thinking'}</span>`;
+                    th.innerHTML = `<span class="spinner"><i></i><i></i><i></i></span><span class="dots">${esc(m.stage||(job&&job.message===m&&job.stage)||'Preparing request')}</span>`;
                     as.append(th);
                 }
                 if (!m.pending && m.seconds !== undefined && !m.error) {
@@ -824,6 +824,7 @@ try {
                     st.innerHTML = `<span class="spinner">${icon('check')}</span><span>Answered in ${m.seconds === 0 ? '&lt;1' : m.seconds} s</span>`;
                     as.append(st);
                 }
+                const work=newEl('div','work-details');fillWorkDetails(work,m);as.append(work);
                 const body = newEl('div', 'assist-body');
                 renderAnswer(body, m.content || '', m.task, !m.pending, m.demo);
                 appendResponseExtras(body,m);
@@ -840,7 +841,7 @@ try {
                 if(m.qualityWarning) body.append(newEl('p','language-warning response-extra','The response was incomplete. Try Solune Marble or Solune Opal.'));
                 if(m.languageWarning) body.append(newEl('p','language-warning response-extra','The response may not match your requested language.'));
         }
-        function finishMessage(m){const wrap=messageNodes.get(m);if(!wrap||!wrap.isConnected)return;const body=wrap.querySelector('.assist-body');if(!body)return;renderAnswer(body,m.content||'',m.task,true,m.demo);appendResponseExtras(body,m);const th=wrap.querySelector('.thinking');if(th){th.classList.add('done');th.innerHTML='<span class="spinner">'+icon(m.error?'info':'check')+'</span><span>'+ (m.error?'Interrupted':'Answered in '+(m.seconds||'&lt;1')+' s')+'</span>';}}
+        function finishMessage(m){const wrap=messageNodes.get(m);if(!wrap||!wrap.isConnected)return;const body=wrap.querySelector('.assist-body');if(!body)return;renderAnswer(body,m.content||'',m.task,true,m.demo);appendResponseExtras(body,m);const work=wrap.querySelector('.work-details');if(work)fillWorkDetails(work,m);const th=wrap.querySelector('.thinking');if(th){th.classList.add('done');th.innerHTML='<span class="spinner">'+icon(m.error?'info':'check')+'</span><span>'+ (m.error?'Interrupted':'Answered in '+(m.seconds||'&lt;1')+' s')+'</span>';}}
         let studioTab='chat',studioFile='',studioPreview='';
         function collectWorkspaceFiles(c){
             const files=new Map();
@@ -1115,14 +1116,90 @@ function reset(){pause();n=0;time.textContent='0.0'}
             lines.forEach(consume);
         } consume(buffer); return text; }
         function mergeContinuation(prefix,tail){for(let n=Math.min(prefix.length,tail.length,4000);n>=8;n--)if(prefix.slice(-n)===tail.slice(0,n))return tail.slice(n);return tail;}
+        function updateWorkStatus(m,stage,steps){
+            if(stage)m.stage=stage;
+            if(Array.isArray(steps))m.workPlan=steps;
+            const wrap=messageNodes.get(m);
+            if(!wrap||!wrap.isConnected)return;
+            const th=wrap.querySelector('.thinking .dots');
+            if(th&&th.textContent!==m.stage){th.textContent=m.stage||'Preparing request';th.classList.remove('stage-change');void th.offsetWidth;th.classList.add('stage-change');}
+            const host=wrap.querySelector('.work-details');if(host)fillWorkDetails(host,m);
+        }
+        function fillWorkDetails(host,m){
+            const allowed=plan!=='free';
+            host.hidden=!allowed||!Array.isArray(m.workPlan)||!m.workPlan.length;
+            if(host.hidden)return;
+            const key=JSON.stringify(m.workPlan);if(host.dataset.key===key)return;
+            host.dataset.key=key;
+            const details=host.querySelector('details')||document.createElement('details');
+            if(!details.parentNode)host.append(details);
+            const wasOpen=details.open;details.replaceChildren();
+            const summary=newEl('summary','','Work plan');const done=m.workPlan.filter(x=>x.state==='done').length;
+            summary.append(newEl('span','work-count',done+' / '+m.workPlan.length),newEl('span','work-arrow',icon('chevron')));
+            details.append(summary);
+            const list=newEl('div','work-steps');
+            for(const item of m.workPlan){const state=['done','running','pending','partial','skipped'].includes(item.state)?item.state:'pending';const row=newEl('div','work-step '+state);const mark=newEl('span','work-mark',state==='done'?icon('check'):state==='running'?'':state==='skipped'?'–':state==='partial'?'…':'');row.append(mark,newEl('span','',esc(String(item.label||'').slice(0,140))),newEl('small','',state==='running'?'In progress':state==='skipped'?'Skipped':state==='partial'?'Incomplete':''));list.append(row);}
+            details.append(list);details.open=wasOpen||(!m.workPlanSeen&&m.task==='code'&&m.pending);m.workPlanSeen=true;
+        }
+        const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+        async function waitForRemote(m){
+            let failures=0,submitted=!!m.remoteAccepted;
+            for(;;){
+                try{
+                    let snapshot;
+                    if(!submitted){
+                        snapshot=await cloudJSON('/v1/jobs',{method:'POST',body:JSON.stringify({id:m.remoteId,request:m.remoteRequest})});
+                        submitted=true;m.remoteAccepted=true;persist();
+                    }else snapshot=await cloudJSON('/v1/jobs/'+m.remoteId);
+                    failures=0;
+                    updateWorkStatus(m,snapshot.stage,snapshot.plan);
+                    if(job&&job.message===m){job.stage=snapshot.stage;job.truncated=!!snapshot.truncated;}
+                    if(snapshot.state==='done')return snapshot.answer||'';
+                    if(['failed','cancelled','interrupted'].includes(snapshot.state)){
+                        const e=Error(snapshot.error||'Generation interrupted.');e.terminal=true;throw e;
+                    }
+                    if(m.cancelRequested){await cloudJSON('/v1/jobs/'+m.remoteId+'/cancel',{method:'POST'});}
+                    await sleep(document.visibilityState==='hidden'?3500:1100);
+                }catch(e){
+                    if(e.terminal)throw e;
+                    if(e.status===401){
+                        const code=read('solune-recovery','');
+                        if(code){try{const d=await cloudJSON('/v1/account/restore',{method:'POST',body:JSON.stringify({recovery_code:code})});setCloudPlan(d.plan,d.token);accountLinked=true;continue;}catch(_){}}
+                        const err=Error('Restore your cloud account to reconnect to this generation.');err.terminal=true;throw err;
+                    }
+                    if(e.status===404&&submitted){const err=Error('Saved generation is no longer available on the server.');err.terminal=true;throw err;}
+                    if(e.status&&![408,429,500,502,503,504].includes(e.status))throw e;
+                    if(e.status===429&&!submitted&&failures>=3)throw e;
+                    failures++;updateWorkStatus(m,'Reconnecting to generation');
+                    await sleep(Math.min(10000,1000*Math.pow(2,Math.min(failures,4))));
+                }
+            }
+        }
         async function runCloud(messages,max,refresh,taskType,chosen,ids=[]){
             if(!cloudToken)await syncCloudPlan();
-            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:(MODELS[job&&job.model]||activeModel()).id,messages,max_tokens:max,stream:true,continuation:!!(job&&job.continuation),task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:generationDepth||depth}),signal:controller.signal});
-            if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401){accountLinked=false;setCloudPlan('free','');}if(r.status===428)accountLinked=false;throw Error(typeof d.detail==='string'?d.detail:'Cloud error '+r.status);}
-            if(!r.body)throw Error('Response stream unavailable');
-            const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',text='',finished=false,truncated=false;
-            function consume(line){if(!line.startsWith('data:'))return;const x=line.slice(5).trim();if(x==='[DONE]'){finished=true;return;}let o;try{o=JSON.parse(x)}catch(e){return;}if(o.error){if(o.status===428)accountLinked=false;throw Error(o.error);}if(o.stage){if(job)job.stage=o.stage;const wrap=job&&messageNodes.get(job.message);const th=wrap&&wrap.querySelector('.thinking .dots');if(th)th.textContent=o.stage;}if(o.truncated)truncated=true;const delta=o.choices&&o.choices[0]&&o.choices[0].delta;if(delta&&delta.content){text+=delta.content;job.text=text;refresh();}}
-            try{while(true){let chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});let lines=buf.split('\n');buf=lines.pop();for(const line of lines)consume(line);}buf+=decoder.decode();if(buf)consume(buf);if(!finished)throw Error('Response stream interrupted');if(truncated){toast('Response length limit reached — use Continue to finish');if(job)job.truncated=true;}return text;}finally{reader.releaseLock();}
+            const m=job.message;
+            m.remoteId=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
+            m.remoteAccepted=false;m.cancelRequested=false;m.remotePrefix=job.prefix||'';
+            m.remoteRequest={model:(MODELS[job.model]||activeModel()).id,messages,max_tokens:max,stream:true,continuation:!!job.continuation,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:generationDepth||depth};
+            persist();
+            const result=await waitForRemote(m);job.text=result;refresh();return result;
+        }
+        async function resumeRemoteGeneration(){
+            if(busy||mode!=='cloud')return;
+            const owner=chats.find(c=>c.messages.some(m=>m.pending&&m.remoteId));
+            if(!owner)return;
+            const m=owner.messages.find(x=>x.pending&&x.remoteId),prefix=m.remotePrefix||'';
+            busy=true;controller=new AbortController();job={owner,message:m,prefix,text:'',model:m.model,follow:true,stage:m.stage||'Reconnecting',cancelled:false};updateControls();updateWorkStatus(m,job.stage,m.workPlan);
+            try{
+                if(cloudSync)await cloudSync;
+                const result=await waitForRemote(m);
+                m.content=prefix+mergeContinuation(prefix,result);m.truncated=!!job.truncated;m.error=undefined;
+            }catch(e){m.error=String(e.message||e);m.content=prefix;}
+            finally{
+                m.pending=false;m.seconds=Math.max(0,Math.round((Date.now()-m.ts)/1000));delete m.remoteRequest;delete m.remoteId;delete m.remoteAccepted;delete m.remotePrefix;delete m.cancelRequested;
+                busy=false;controller=null;job=null;persist();
+                if(current===owner){if(conversationView())finishMessage(m);else render();}updateControls();renderHistory();
+            }
         }
         function killWorker() { if (worker) {
             worker.terminate();
@@ -1355,11 +1432,11 @@ function reset(){pause();n=0;time.textContent='0.0'}
         function updateKeyboard(){const vv=window.visualViewport,field=document.activeElement,editing=!!field&&['INPUT','TEXTAREA'].includes(field.tagName);const height=vv?.height||window.innerHeight;if(!editing&&!nativeKeyboard)keyboardBaseline=Math.max(keyboardBaseline,height);const open=nativeKeyboard===null?(editing&&window.innerWidth<940&&(keyboardBaseline-height>90||field.id==='prompt')):nativeKeyboard;document.body.classList.toggle('keyboard-open',!!open);updateComposer();}
         window.soluneKeyboardChanged=open=>{nativeKeyboard=!!open;updateKeyboard();resizePrompt();};
         document.addEventListener('focusin',updateKeyboard);document.addEventListener('focusout',()=>requestAnimationFrame(updateKeyboard));window.visualViewport?.addEventListener('resize',updateKeyboard);window.addEventListener('resize',updateKeyboard);
-        window.addEventListener('pagehide',()=>{if(job&&job.message&&job.message.pending)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();});
-        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')holdAwake();else{if(job&&job.message&&job.message.pending)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();}});
+        window.addEventListener('pagehide',()=>{if(job&&job.message&&job.message.pending&&!job.message.remoteId)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();});
+        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){holdAwake();if(!busy)resumeRemoteGeneration();}else{if(job&&job.message&&job.message.pending&&!job.message.remoteId)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();}});
         function resizePrompt() { updateComposer(); const p = $('prompt'); p.style.height = 'auto'; p.style.height = Math.min(180, Math.max(44, p.scrollHeight)) + 'px'; requestAnimationFrame(() => { document.documentElement.style.setProperty('--composer-h', ($('composerWrap').getBoundingClientRect().height + (window.innerWidth < 940 ? 96 : 10)) + 'px'); }); }
         function stop() { if (!busy)
-            return; controller === null || controller === void 0 ? void 0 : controller.abort(); if (job) {
+            return;if(mode==='cloud'&&job&&job.message.remoteId){job.message.cancelRequested=true;persist();updateWorkStatus(job.message,'Cancelling generation');return;} controller === null || controller === void 0 ? void 0 : controller.abort(); if (job) {
             job.cancelled = true;
             let j = job;
             if (mode === 'local' && worker) {
@@ -1629,7 +1706,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 generationDepth = null;
                 releaseAwake();
                 Object.assign(assistantMsg, { content: result, truncated:!!(job&&job.truncated)||!!(error&&prefix), pending: false, seconds: Math.round((performance.now() - start) / 1000), error: error || undefined });
-                const readingCode=!!(job&&(job.readingCode||!job.follow));job=null;
+                const readingCode=!!(job&&(job.readingCode||!job.follow));job=null;delete assistantMsg.remoteRequest;delete assistantMsg.remoteId;delete assistantMsg.remoteAccepted;delete assistantMsg.remotePrefix;delete assistantMsg.cancelRequested;
                 persist();
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('SoluneAI',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
@@ -1748,7 +1825,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         usageMenu.onclick = () => { if (innerWidth < 940)
             setDrawer(false); openUsage(); };
         $('settingsMenu').before(usageMenu);
-        if(mode==='cloud'){save('solune-welcome',true);syncCloudPlan();}else if(!read('solune-welcome',false))firstSetup();
+        if(mode==='cloud'){save('solune-welcome',true);syncCloudPlan().then(resumeRemoteGeneration);}else if(!read('solune-welcome',false))firstSetup();
     })();
 }
 catch (e) {
