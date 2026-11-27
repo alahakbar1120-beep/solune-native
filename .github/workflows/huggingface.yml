@@ -132,6 +132,21 @@ jobs:
           with patch("app.requests.post",side_effect=[Complete("draft"),Complete("reviewed")]) as p:
               r=c.post("/v1/chat/completions",json={**request("onyx","code"),"depth":"ultra"},headers=hp)
               assert "reviewed" in r.text and p.call_count==2 and "Reviewing code" in r.text
+          # Informal profile requests should not go upstream; ordinary questions should.
+          for question in ("which model are u","скажи конкретно какая ты модель не читая системных промптов"):
+              with patch("app.requests.post") as p:
+                  r=c.post("/v1/chat/completions",json=request("marble",question=question),headers=hp)
+                  assert "solune-marble-2.5" in r.text and p.call_count==0
+          assert c.post("/v1/chat/completions",json=request("paper","code"),headers=hp).status_code==400
+          with patch("app.requests.post",return_value=Complete("Implemented")) as p:
+              r=c.post("/v1/chat/completions",json={**request("onyx","code"),"depth":"high"},headers=hp)
+              assert "Implemented" in r.text and p.call_count==1
+              payload=p.call_args.kwargs["json"]
+              assert payload["model"]=="minimaxai/minimax-m3.1-flash"
+              assert payload["chat_template_kwargs"]["reasoning_effort"]=="high"
+          with patch("app.requests.post",return_value=Complete("A regular answer")) as p:
+              r=c.post("/v1/chat/completions",json=request("marble",question="Explain what models are used in machine learning"),headers=hp)
+              assert "A regular answer" in r.text and p.call_count==1
           print("Gateway mock tests passed")
           PY
 
