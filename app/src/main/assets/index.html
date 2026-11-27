@@ -833,9 +833,9 @@ try {
             return wrap;
         }
         function appendResponseExtras(body,m){if(m.pending||body._extrasAdded)return;body._extrasAdded=true;
-                if(m.truncated&&!m.pending){const b=newEl('button','card-btn','Continue response');b.onclick=()=>{if(busy)return;if(current.messages[current.messages.length-1]!==m){toast('Continue from the latest response or retry this message');return;}task=m.task||'chat';skill=m.skill||'';selectedSkills=m.skills||[];$('prompt').value='Continue from the last response without repeating the completed content.';resizePrompt();send();};body.append(b);}if(m.error){const e=newEl('div','response-error');e.append(newEl('p','',esc(m.error)));const b=newEl('button','card-btn',icon('retry')+'<span>Try again</span>');b.onclick=()=>retry(m);e.append(b);body.append(e);}
-                if(m.qualityWarning) body.append(newEl('p','language-warning','The response was incomplete. Try Solune Marble or Solune Opal.'));
-                if(m.languageWarning) body.append(newEl('p','language-warning','The response may not match your requested language.'));
+                if(m.truncated&&!m.pending){const b=newEl('button','card-btn response-extra','Continue response');b.onclick=()=>{if(busy)return;if(current.messages.at(-1)!==m){toast('Continue the latest response');return;}send(m);};body.append(b);}if(m.error){const e=newEl('div','response-error response-extra');e.append(newEl('p','',esc(m.error)));const b=newEl('button','card-btn',icon('retry')+'<span>Try again</span>');b.onclick=()=>retry(m);e.append(b);body.append(e);}
+                if(m.qualityWarning) body.append(newEl('p','language-warning response-extra','The response was incomplete. Try Solune Marble or Solune Opal.'));
+                if(m.languageWarning) body.append(newEl('p','language-warning response-extra','The response may not match your requested language.'));
         }
         function finishMessage(m){const wrap=messageNodes.get(m);if(!wrap||!wrap.isConnected)return;const body=wrap.querySelector('.assist-body');if(!body)return;renderAnswer(body,m.content||'',m.task,true,m.demo);appendResponseExtras(body,m);const th=wrap.querySelector('.thinking');if(th){th.classList.add('done');th.innerHTML='<span class="spinner">'+icon(m.error?'info':'check')+'</span><span>'+ (m.error?'Interrupted':'Answered in '+(m.seconds||'&lt;1')+' s')+'</span>';}}
         let studioTab='chat',studioFile='',studioPreview='';
@@ -1097,9 +1097,10 @@ function reset(){pause();n=0;time.textContent='0.0'}
             buffer = lines.pop();
             lines.forEach(consume);
         } consume(buffer); return text; }
+        function mergeContinuation(prefix,tail){for(let n=Math.min(prefix.length,tail.length,4000);n>=8;n--)if(prefix.slice(-n)===tail.slice(0,n))return tail.slice(n);return tail;}
         async function runCloud(messages,max,refresh,taskType,chosen,ids=[]){
             if(!cloudToken)await syncCloudPlan();
-            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:activeModel().id,messages,max_tokens:max,stream:true,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:chosen==='instant'?'low':(chosen==='deep'||chosen==='research')?'high':depth}),signal:controller.signal});
+            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:(MODELS[job&&job.model]||activeModel()).id,messages,max_tokens:max,stream:true,continuation:!!(job&&job.continuation),task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:chosen==='instant'?'low':(chosen==='deep'||chosen==='research')?'high':depth}),signal:controller.signal});
             if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401)setCloudPlan('free','');throw Error(typeof d.detail==='string'?d.detail:'Cloud error '+r.status);}
             if(!r.body)throw Error('Response stream unavailable');
             const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',text='',finished=false,truncated=false;
@@ -1255,18 +1256,21 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 const target=newEl('div','settings-grid');target.append(newEl('p','helper','Loading usage…'));body.append(target);
                 cloudJSON('/v1/usage').then(d=>{
                     cloudUsage=d;setCloudPlan(d.plan,cloudToken);target.replaceChildren();
-                    target.append(newEl('div','usage-overview','<small>Plan · last 24 hours</small><h2>'+esc(PLANS[plan].name)+'</h2>'));
-                    for(const [id,m] of Object.entries(d.models)){let pct=Math.min(100,Math.round(m.tokens_used/Math.max(1,m.tokens_limit)*100));target.append(newEl('div','settings-card usage-detail','<div class="usage-label"><b>'+esc(MODELS[id].name)+'</b><strong>'+pct+'%</strong></div><div class="usage-track"><i style="width:'+pct+'%"></i></div><small>'+m.tokens_used.toLocaleString('en-US')+' / '+m.tokens_limit.toLocaleString('en-US')+' tokens · '+m.requests_used+' / '+m.requests_limit+' requests</small>'));}
-                    for(const k of d.keys){const names={ok:'Available',invalid_key:'Authentication error',rate_limited:'Rate limited',not_checked:'Not checked',missing:'Not configured',error:'Error'};const c=newEl('div','settings-card');c.append(newEl('h3','','Connection '+k.slot+(k.active?' · active':'')),newEl('p','helper',esc(names[k.state]||k.state)));for(const [id,m] of Object.entries(k.models)){const t=(MODELS[id]||{}).name||id;c.append(newEl('p','helper',esc(t+': Requests/day '+(m['remaining-requests']??'—')+' / '+(m['limit-requests']??'—')+' · Tokens/min '+(m['remaining-tokens']??'—')+' / '+(m['limit-tokens']??'—'))));}target.append(c);}
-                    target.append(newEl('p','helper',esc(d.note)));
-                }).catch(e=>{target.replaceChildren(newEl('p','helper',esc(e.message)));});
+                    const fmt=n=>Number(n||0).toLocaleString('en-US'),limit=d.tokens_limit,used=d.tokens_used||0;
+                    target.append(newEl('div','usage-overview','<small>'+esc(PLANS[plan].name)+' · Shared 24-hour usage</small><h2>'+fmt(used)+'</h2><span>tokens used'+(limit===null?' · No plan cap':' / '+fmt(limit))+'</span>'));
+                    if(limit!==null){const pct=Math.min(100,Math.round(100*used/Math.max(1,limit)));target.append(newEl('div','settings-card usage-detail','<div class="usage-label"><b>All models & skills</b><strong>'+pct+'%</strong></div><div class="usage-track"><i style="width:'+pct+'%"></i></div><small>'+fmt(Math.max(0,limit-used))+' tokens remaining</small>'));}
+                    const reset=d.reset_at?new Date(d.reset_at*1000).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'24 hours after first request';
+                    target.append(newEl('div','settings-card','<div class="usage-label"><b>Resets</b></div><small>'+esc(reset)+'</small>'));
+                    target.append(newEl('div','settings-card','<div class="usage-label"><b>Lifetime usage</b><strong>'+fmt(d.tokens_lifetime)+'</strong></div><small>tokens across all models</small>'));
+                    target.append(newEl('p','helper',esc(d.note||'')));
+                }).catch(e=>target.replaceChildren(newEl('p','helper',esc(e.message))));
                 const b=newEl('button','card-btn','Refresh');b.onclick=openCloudUsage;body.append(b);
             });
         }
         function openCloudPlans(){
             openSheet('Plans',body=>{
-                body.append(newEl('p','helper','Free test plans. Personal and shared server limits apply. Pro and Dev require a password.'));
-                for(const [p,f] of [['free','20%'],['pro','50%'],['dev','100%']]){
+                body.append(newEl('p','helper','One shared 24-hour token allowance across all models. Pro and Dev require a password.'));
+                for(const [p,f] of [['free','100K tokens'],['pro','300K tokens'],['dev','No plan cap']]){
                     const c=newEl('div','plan-card'+(p===plan?' selected':''));c.append(newEl('h3','',PLANS[p].name+' · '+f),newEl('p','helper',p==='free'?'Paper, Marble, SVG, web search and quick answers':'All profiles, Code, Deep and Research'));
                     const input=document.createElement('input');input.type='password';input.placeholder='Plan password';input.autocomplete='off';input.className='plan-password';
                     if(p!=='free'&&p!==plan)c.append(input);
@@ -1328,8 +1332,8 @@ function reset(){pause();n=0;time.textContent='0.0'}
             try { let lock=await navigator.wakeLock.request('screen'); if(!busy||!settings.keepAwake){await lock.release();return;} wakeLock=lock; lock.addEventListener('release',()=>{if(wakeLock===lock)wakeLock=null;}); } catch(e){} finally{wakePending=false;}
         }
         function releaseAwake(){let lock=wakeLock;wakeLock=null;if(lock)lock.release().catch(()=>{});}
-        window.addEventListener('pagehide',()=>{if(job&&job.message&&job.message.pending)job.message.content=job.text||job.message.content;persist();});
-        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')holdAwake();else{if(job&&job.message&&job.message.pending)job.message.content=job.text||job.message.content;persist();}});
+        window.addEventListener('pagehide',()=>{if(job&&job.message&&job.message.pending)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();});
+        document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')holdAwake();else{if(job&&job.message&&job.message.pending)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();}});
         function resizePrompt() { updateComposer(); const p = $('prompt'); p.style.height = 'auto'; p.style.height = Math.min(180, Math.max(44, p.scrollHeight)) + 'px'; requestAnimationFrame(() => { document.documentElement.style.setProperty('--composer-h', ($('composerWrap').getBoundingClientRect().height + (window.innerWidth < 940 ? 96 : 10)) + 'px'); }); }
         function stop() { if (!busy)
             return; controller === null || controller === void 0 ? void 0 : controller.abort(); if (job) {
@@ -1477,19 +1481,21 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 } })();
             });
         }
-        async function send() {
+        async function send(arg) {
+            const continuation=arg&&arg.role==='assistant'?arg:null;
+            if(continuation&&(busy||!current||current.messages.at(-1)!==continuation))return;
             if(busy){if(job&&current===job.owner)stop();else toast('A response is running in another chat. Open it to stop generation.');return;}
             if(mode==='cloud'&&cloudSync)await cloudSync;
             if(busy)return;
-            let q = $('prompt').value.trim();
-            if (!validPrompt() || !q)
+            let q=continuation?(current.messages.filter(m=>m.role==='user').at(-1)?.content||'Continue'): $('prompt').value.trim();
+            if(!continuation&&(!validPrompt()||!q))
                 return;
-            let ids=[...new Set([...selectedSkills,...(skill?[skill]:[])])];
-            while(true){const p=q.match(/^[\/／](img|code|deep|instant|web|research|дип)(?:\s+|$)/i);if(!p)break;const id=p[1].toLowerCase()==='дип'?'deep':p[1].toLowerCase();if(!toggleSkill(SKILLS.find(x=>x.id===id)))return;ids=[...selectedSkills];q=q.slice(p[0].length).trim();}
+            let ids=continuation?[...(continuation.skills||[])]:[...new Set([...selectedSkills,...(skill?[skill]:[])])];
+            while(!continuation){const p=q.match(/^[\/／](img|code|deep|instant|web|research|дип)(?:\s+|$)/i);if(!p)break;const id=p[1].toLowerCase()==='дип'?'deep':p[1].toLowerCase();if(!toggleSkill(SKILLS.find(x=>x.id===id)))return;ids=[...selectedSkills];q=q.slice(p[0].length).trim();}
             if(!q){$('prompt').value='';resizePrompt();return;}
             if(/^[\/／][a-zа-яё]*$/i.test(q)&&skillMatches().length){selectSkill(skillMatches()[skillIndex]||skillMatches()[0]);return;}
-            const chosen=ids.includes('research')?'research':ids.includes('deep')?'deep':ids.includes('instant')?'instant':ids[0]||'';
-            let resolvedTask=ids.length?resolveSkills(ids):view==='code'&&codeOpen?'code':task;
+            const chosen=continuation?(continuation.skill||''):ids.includes('research')?'research':ids.includes('deep')?'deep':ids.includes('instant')?'instant':ids[0]||'';
+            let resolvedTask=continuation?(continuation.task||'chat'):ids.length?resolveSkills(ids):view==='code'&&codeOpen?'code':task;
             if (!chosen && resolvedTask === 'chat' && /(?:нарисуй|создай\s+(?:картин|изображ)|сгенерируй\s+(?:картин|изображ)|draw an? |generate an? image)/i.test(q))
                 resolvedTask = 'image';
             if((resolvedTask==='web'||resolvedTask==='research')&&mode!=='cloud'){toast('Online search requires Solune Cloud');return;}
@@ -1514,45 +1520,34 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 openEngine();
                 return;
             }
-            if(resolvedTask==='code'&&view!=='code'){if(view==='chat')chatMemory=current;current=null;view='code';codeOpen=true;studioTab='chat';task='code';}else if(view!=='code')view='chat';
+            if(!continuation&&resolvedTask==='code'&&view!=='code'){if(view==='chat')chatMemory=current;current=null;view='code';codeOpen=true;studioTab='chat';task='code';}else if(view!=='code')view='chat';
             ensureCurrent();
             const owner=current;
             if(!owner.messages.length&&resolvedTask==='code')owner.kind='code';
-            if(!owner.messages.length)
-                owner.title = q.slice(0, 50);
-            owner.messages.push({ role: 'user', content: q, task: resolvedTask, skill: chosen, skills:ids, ts: Date.now(), animate:true });
-            $('prompt').value = '';
-            $('prompt').blur();
-            save('marble15-draft', '');
+            if(!owner.messages.length)owner.title=q.slice(0,50);
+            if(!continuation)owner.messages.push({ role: 'user', content: q, task: resolvedTask, skill: chosen, skills:ids, ts: Date.now(), animate:true });
+            if(!continuation){$('prompt').value='';$('prompt').blur();save('marble15-draft','');}
             hideSkills();
             skill='';selectedSkills=[];task=owner.kind==='code'?'code':'chat';busy=true;
             controller = new AbortController();
             holdAwake();
             generationDepth = chosen === 'instant' ? 'low' : chosen === 'deep' ? 'high' : depth;
-            const assistantMsg = { role: 'assistant', content: '', task: resolvedTask, skill: chosen, skills:ids, model: selectedModel, profileName:activeModel().name, profileId:activeModel().id, ts: Date.now(), pending: true, animate:true, demo: mode === 'demo' };
-            owner.messages.push(assistantMsg);
-            resizePrompt();
-            render();
+            const prefix=continuation?String(continuation.content||''):'';
+            const assistantMsg = continuation||{ role: 'assistant', content: '', task: resolvedTask, skill: chosen, skills:ids, model: selectedModel, profileName:activeModel().name, profileId:activeModel().id, ts: Date.now(), pending: true, animate:true, demo: mode === 'demo' };
+            if(!continuation){owner.messages.push(assistantMsg);resizePrompt();render();}else{assistantMsg.pending=true;assistantMsg.error=undefined;const wrap=messageNodes.get(assistantMsg);if(wrap){const body=wrap.querySelector('.assist-body');body.querySelectorAll('.response-extra').forEach(n=>n.remove());body._extrasAdded=false;let th=wrap.querySelector('.thinking');if(!th){th=newEl('div','thinking');wrap.querySelector('.assistant').insertBefore(th,body);}th.classList.remove('done');th.innerHTML='<span class="spinner"><i></i><i></i><i></i></span><span class="dots">Continuing answer</span>';}}
             scrollToBottom(true);
             const start = performance.now();
             let result = '', error = '', raf = 0, checkpoint = Date.now();
             const id = ++activeReq;
             const answerNode=()=>{const wrap=messageNodes.get(assistantMsg);return wrap&&wrap.isConnected?wrap.querySelector('.assist-body'):null;};
-            let visible='',lastPaint=0;
-            const refresh=()=>{if(!job)return;assistantMsg.content=job.text;if(Date.now()-checkpoint>1800){checkpoint=Date.now();persist();}if(raf)return;
-                const frame=(now)=>{raf=0;if(!job)return;const target=job.text||'';
-                    if(!target.startsWith(visible))visible='';
-                    // Adaptive batches: no network delay, no whole-thread rerenders, and fast catch-up for bursts.
-                    if(now-lastPaint<32){raf=requestAnimationFrame(frame);return;}
-                    lastPaint=now;const remaining=target.length-visible.length;
-                    const take=Math.min(remaining,Math.max(12,Math.ceil(remaining/3)));
-                    if(take>0)visible=target.slice(0,visible.length+take);
-                    const node=answerNode();if(node){const stick=isNearBottom()&&!job.readingCode;renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(stick)scrollToBottom(true);}
-                    if(visible!==target)raf=requestAnimationFrame(frame);
-                };
-                raf=requestAnimationFrame(frame);
-            };
-            job = { id, text: '', refresh, cancelled: false,owner,message:assistantMsg };updateControls();
+            let visible=prefix;
+            const refresh=()=>{if(!job)return;assistantMsg.content=prefix+mergeContinuation(prefix,job.text||'');if(Date.now()-checkpoint>1800){checkpoint=Date.now();persist();}};
+            job={id,text:'',refresh,cancelled:false,owner,message:assistantMsg,prefix,follow:true,continuation:!!continuation,model:continuation?continuation.model:selectedModel};updateControls();
+            async function reveal(text){
+                if(!text.startsWith(prefix))visible='';
+                const initial=visible.length,started=performance.now(),duration=settings.reducedMotion?0:Math.min(900,Math.max(180,(text.length-initial)/40));
+                await new Promise(resolve=>{const frame=now=>{if(!job||job.cancelled||document.visibilityState==='hidden'){resolve();return;}const t=duration?Math.min(1,(now-started)/duration):1;const end=Math.min(text.length,initial+Math.ceil((text.length-initial)*t));visible=text.slice(0,end);const node=answerNode();if(node){renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(job.follow&&!job.readingCode)followLatest();}if(t<1)raf=requestAnimationFrame(frame);else resolve();};raf=requestAnimationFrame(frame);});
+            }
             async function generate(msgs, max) { if (mode === 'local')
                 return await new Promise((resolve, reject) => { Object.assign(job, { id: ++activeReq, resolve, reject }); worker.postMessage({ type: 'generate', id: job.id, messages: msgs, max, task:resolvedTask }); }); return mode==='cloud'?await runCloud(msgs,max,refresh,resolvedTask,chosen,ids):await runAPI(msgs,max,refresh); }
             try {
@@ -1571,14 +1566,15 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     result = job.text;
                 }
                 else {
-                    const msgs = messagesFor(resolvedTask);
-                    result = await generate(msgs, max);
-                    if(resolvedTask==='chat' && !job.cancelled && !controller.signal.aborted && genericReply(result) && !/^(привет|здравствуй(?:те)?|hello|hi|hey|добрый (день|вечер|утро))[!?. ]*$/i.test(q.trim())) {
+                    let msgs=messagesFor(resolvedTask);
+                    if(continuation){const original=msgs.at(-1);msgs=[msgs[0],original,{role:'assistant',content:prefix.slice(-30000)},{role:'user',content:'Continue the preceding assistant response exactly at its end. Return only the missing suffix, preserving whitespace and code fences. Do not repeat earlier content.'}];}
+                    result=await generate(msgs,max);
+                    if(!continuation&&resolvedTask==='chat' && !job.cancelled && !controller.signal.aborted && genericReply(result) && !/^(привет|здравствуй(?:те)?|hello|hi|hey|добрый (день|вечер|утро))[!?. ]*$/i.test(q.trim())) {
                         job.text=''; let th=$('feed').querySelector('.thread .msg:last-child .thinking .dots'); if(th)th.textContent='Refining response';
                         let corrected=await generate([{role:'system',content:systemPrompt('chat',q)},{role:'user',content:(answerLanguage(q)==='Russian'?'Ответь прямо на вопрос: ':'Answer this question directly: ')+q}], Math.min(max,160));
                         if(corrected && !genericReply(corrected))result=corrected;else assistantMsg.qualityWarning=true;
                     }
-                    if (chosen === 'deep' && mode!=='cloud' && !job.cancelled && !controller.signal.aborted && result) {
+                    if (!continuation&&chosen === 'deep' && mode!=='cloud' && !job.cancelled && !controller.signal.aborted && result) {
                         let th = $('feed').querySelector('.thread .msg:last-child .thinking .dots');
                         if (th)
                             th.textContent = 'Reviewing response';
@@ -1595,10 +1591,11 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     throw Error('Empty response');
                 if(mode!=='demo' && resolvedTask==='chat' && answerLanguage(q)==='Russian' && !/[а-яё]/i.test(result) && /[a-z]{3}/i.test(result)) assistantMsg.languageWarning=true;
                 if(mode!=='cloud')charge(cost);
+                result=prefix+mergeContinuation(prefix,result);assistantMsg.content=result;await reveal(result);
             }
             catch (e) {
                 error = controller.signal.aborted || (job === null || job === void 0 ? void 0 : job.cancelled) ? 'Generation stopped.' : String(e.message || e);
-                result = result || (job === null || job === void 0 ? void 0 : job.text) || '';
+                result=prefix+mergeContinuation(prefix,result.startsWith(prefix)&&prefix?result.slice(prefix.length):(result||(job&&job.text)||''));
             }
             finally {
                 cancelAnimationFrame(raf);
@@ -1606,20 +1603,23 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 controller = null;
                 generationDepth = null;
                 releaseAwake();
-                Object.assign(assistantMsg, { content: result, truncated:!!(job&&job.truncated), pending: false, seconds: Math.round((performance.now() - start) / 1000), error: error || undefined });
-                const readingCode=!!(job&&job.readingCode);job=null;
+                Object.assign(assistantMsg, { content: result, truncated:!!(job&&job.truncated)||!!(error&&prefix), pending: false, seconds: Math.round((performance.now() - start) / 1000), error: error || undefined });
+                const readingCode=!!(job&&(job.readingCode||!job.follow));job=null;
                 persist();
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('SoluneAI',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
                 let thread = $('feed').querySelector('.thread');
                 if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();if(view==='code'&&codeOpen&&current===owner&&studioTab!=='chat'){const hint=newEl('button','card-btn studio-refresh','New response ready · Refresh files');hint.onclick=()=>render();const panel=$('feed').querySelector('.studio-panel');if(panel)panel.prepend(hint);}}
-                if(stick&&!readingCode&&current===owner&&conversationView())scrollToBottom(true);
-                if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
+                if(!readingCode&&current===owner&&conversationView())scrollToBottom(true);
+                if(mode==='cloud')cloudJSON('/v1/usage').then(d=>{cloudUsage=d;}).catch(()=>{});if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openCloudUsage();}
             }
         }
-        function isNearBottom() { const f = $('feed'); return f.scrollHeight - f.scrollTop - f.clientHeight < 180; }
+        let ownScroll=null,lastScroll=0;
+        function isNearBottom(){const f=$('feed');return f.scrollHeight-f.scrollTop-f.clientHeight<48;}
+        function followLatest(){const f=$('feed');const end=Math.max(0,f.scrollHeight-f.clientHeight);ownScroll=end;f.scrollTop=end;lastScroll=f.scrollTop;updateScrollFab();}
+        function handleFeedScroll(){const f=$('feed'),y=f.scrollTop;const own=ownScroll!==null&&Math.abs(y-ownScroll)<3;ownScroll=null;if(job&&current===job.owner&&conversationView()&&!own){if(y<lastScroll-3){job.follow=false;}else if(isNearBottom()){job.follow=true;job.readingCode=false;}}lastScroll=y;updateScrollFab();}
         function scrollToBottom(force = false) { const f = $('feed'); if (force || isNearBottom())
-            f.scrollTop = f.scrollHeight; updateScrollFab(); }
+            followLatest(); updateScrollFab(); }
         function scrollIfNearBottom() { if (isNearBottom())
             scrollToBottom(true); updateScrollFab(); }
         function updateScrollFab() { var _a; const f = $('feed'); $('scrollFab').classList.toggle('show', f.scrollHeight - f.scrollTop - f.clientHeight > 260 && conversationView() && !!((_a = current === null || current === void 0 ? void 0 : current.messages) === null || _a === void 0 ? void 0 : _a.length)); }
@@ -1660,7 +1660,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         on($('previewClose'), 'click', closePreview);
         on($('previewModal'), 'click', e => { if (e.target === $('previewModal'))
             closePreview(); });
-        on($('scrollFab'),'click',()=>{if(job)job.readingCode=false;scrollToBottom(true);});
+        on($('scrollFab'),'click',()=>{if(job){job.readingCode=false;job.follow=true;}scrollToBottom(true);});
         on($('historySearch'), 'input', renderHistory);
         for (const b of document.querySelectorAll('.tabbtn'))
             on(b, 'click', () => setView(b.dataset.view));
@@ -1688,7 +1688,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         on(window, 'resize', () => { resizePrompt(); updateControls(); });
         on(document, 'pointerdown', e => { if (!e.target.closest('.composer')&&!e.target.closest('#skillMenu'))
             hideSkills(); });
-        on($('feed'), 'scroll', updateScrollFab, { passive: true });
+        on($('feed'),'scroll',handleFeedScroll,{passive:true});
         let startY = null;
         on($('sheetHandle'), 'pointerdown', e => { startY = e.clientY; $('sheet').style.transition = 'none'; $('sheetHandle').setPointerCapture(e.pointerId); });
         on($('sheetHandle'), 'pointermove', e => { if (startY == null)
