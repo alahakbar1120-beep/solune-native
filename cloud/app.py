@@ -28,6 +28,7 @@ if data_dir: Path(data_dir).mkdir(parents=True,exist_ok=True)
 db=sqlite3.connect(str(Path(data_dir)/"usage.sqlite3") if data_dir else ":memory:",check_same_thread=False)
 db.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY,value TEXT NOT NULL)")
 db.execute("CREATE TABLE IF NOT EXISTS usage (identity TEXT PRIMARY KEY,start INTEGER NOT NULL,tokens INTEGER NOT NULL,lifetime INTEGER NOT NULL,requests INTEGER NOT NULL)")
+db.execute("CREATE TABLE IF NOT EXISTS accounts (identity TEXT PRIMARY KEY, recovery_hash TEXT UNIQUE NOT NULL, plan TEXT NOT NULL)")
 with db:
     db.execute("INSERT OR IGNORE INTO config VALUES (?,?)",("signing_key",secrets.token_hex(32)))
 SIGN=bytes.fromhex(db.execute("SELECT value FROM config WHERE key=?",("signing_key",)).fetchone()[0])
@@ -43,7 +44,9 @@ def principal(req):
     try:
         p,exp,nonce,sig=token.split(".")
         base=".".join((p,exp,nonce))
-        if p in PLAN_LIMITS and int(exp)>time.time() and hmac.compare_digest(sig,hmac.new(SIGN,base.encode(),hashlib.sha256).hexdigest()): return p,nonce
+        if p in PLAN_LIMITS and int(exp)>time.time() and hmac.compare_digest(sig,hmac.new(SIGN,base.encode(),hashlib.sha256).hexdigest()):
+            with lock: account=db.execute("SELECT plan FROM accounts WHERE identity=?",(nonce,)).fetchone()
+            return (account[0] if account else p),nonce
     except (ValueError,TypeError): pass
     raise HTTPException(401,"Session expired. Activate your plan again.")
 def usage_row(identity,now=None):
@@ -53,6 +56,8 @@ def usage_row(identity,now=None):
     start,tokens,lifetime,requests=row
     if now>=start+WINDOW_SECONDS:return (0,0,lifetime,0)
     return row
+class Restore(BaseModel):
+    recovery_code:str=Field(min_length=40,max_length=100)
 class Unlock(BaseModel):
     plan:str
     password:str=Field(max_length=200)
@@ -79,11 +84,35 @@ def session(req:Request):
         p,identity=principal(req)
         return {"plan":p,"token":sign(p,identity)}
     return {"plan":"free","token":sign("free")}
+@app.post("/v1/account/create")
+def account_create(req:Request):
+    p,identity=principal(req)
+    if identity=="guest":identity=secrets.token_hex(16)
+    with lock,db:
+        if db.execute("SELECT 1 FROM accounts WHERE identity=?",(identity,)).fetchone():
+            raise HTTPException(409,"Account already linked. Use your saved recovery code.")
+        recovery=secrets.token_urlsafe(32)
+        db.execute("INSERT INTO accounts VALUES (?,?,?)",(identity,hashlib.sha256(recovery.encode()).hexdigest(),p))
+    return {"plan":p,"token":sign(p,identity),"recovery_code":recovery}
+
+@app.post("/v1/account/restore")
+def account_restore(q:Restore):
+    digest=hashlib.sha256(q.recovery_code.strip().encode()).hexdigest()
+    with lock:row=db.execute("SELECT identity,plan FROM accounts WHERE recovery_hash=?",(digest,)).fetchone()
+    if not row:raise HTTPException(403,"Invalid recovery code.")
+    return {"plan":row[1],"token":sign(row[1],row[0])}
+
+def has_account(identity):
+    with lock:return bool(db.execute("SELECT 1 FROM accounts WHERE identity=?",(identity,)).fetchone())
+
 @app.post("/v1/unlock")
 def unlock(q:Unlock,req:Request):
     _,identity=principal(req)
     if identity=="guest": identity=secrets.token_hex(8)
-    if q.plan=="free": return {"plan":"free","token":sign("free",identity)}
+    if not has_account(identity):raise HTTPException(428,"Create or restore an account first.")
+    if q.plan=="free":
+        with lock,db:db.execute("UPDATE accounts SET plan=? WHERE identity=?",("free",identity))
+        return {"plan":"free","token":sign("free",identity)}
     with lock:
         now=time.time()
         while attempts and attempts[0]<now-60: attempts.popleft()
@@ -91,6 +120,7 @@ def unlock(q:Unlock,req:Request):
         attempts.append(now)
     expected=PASSWORDS.get(q.plan,"")
     if not expected or not hmac.compare_digest(q.password.encode(),expected.encode()): raise HTTPException(403,"Incorrect password or plan unavailable.")
+    with lock,db:db.execute("UPDATE accounts SET plan=? WHERE identity=?",(q.plan,identity))
     return {"plan":q.plan,"token":sign(q.plan,identity)}
 @app.get("/v1/usage")
 def usage(req:Request):
@@ -98,7 +128,7 @@ def usage(req:Request):
     with lock:
         start,used,lifetime,count=usage_row(identity)
         limit=PLAN_LIMITS[p]
-        return {"plan":p,"tokens_used":used,"tokens_limit":limit,"tokens_lifetime":lifetime,"requests_used":count,"reset_at":start+WINDOW_SECONDS if start else None,"server_time":int(time.time()),"window":"fixed_24h_from_first_request","persistent":bool(data_dir),"note":"One shared token allowance across all profiles and skills. Dev has no Solune token cap; upstream limits and server capacity still apply."}
+        return {"plan":p,"account_linked":has_account(identity),"tokens_used":used,"tokens_limit":limit,"tokens_lifetime":lifetime,"requests_used":count,"reset_at":start+WINDOW_SECONDS if start else None,"server_time":int(time.time()),"window":"fixed_24h_from_first_request","persistent":bool(data_dir),"note":"One shared token allowance across all profiles and skills. Dev has no Solune token cap; upstream limits and server capacity still apply."}
 def rate_headers(r,slot,model):
     fields=("limit-requests","remaining-requests","reset-requests","limit-tokens","remaining-tokens","reset-tokens")
     with lock:
@@ -226,6 +256,7 @@ def complete(model,identity,plan,messages,budget,effort="medium",search=False,co
 @app.post("/v1/chat/completions")
 def chat(q:Chat,req:Request):
     plan,identity=principal(req)
+    if not has_account(identity):raise HTTPException(428,"Create or restore an account first.")
     q.model=PROFILE_BY_ID.get(q.model,q.model)
     skills=set(q.skills)
     if not skills.issubset({"img","code","deep","instant","web","research"}):raise HTTPException(400,"Unknown skill.")
