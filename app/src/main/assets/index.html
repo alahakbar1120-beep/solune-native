@@ -515,7 +515,7 @@ try {
         let draft = read('marble15-draft', '');
         if (typeof draft !== 'string')
             draft = '';
-        let plan=mode==='cloud'?'free':read('marble15-plan','free');
+        let plan=read('marble15-plan','free');
         if (!['free', 'pro', 'dev'].includes(plan))
             plan = 'free';
         let usage = read('marble15-usage', []);
@@ -1159,7 +1159,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     failures=0;
                     updateWorkStatus(m,snapshot.stage,snapshot.plan);
                     if(job&&job.message===m){job.stage=snapshot.stage;job.truncated=!!snapshot.truncated;}
-                    if(snapshot.state==='done')return snapshot.answer||'';
+                    if(snapshot.state==='done'){m.remoteFinished=true;return snapshot.answer||'';}
                     if(['failed','cancelled','interrupted'].includes(snapshot.state)){
                         const e=Error(snapshot.error||'Generation interrupted.');e.terminal=true;throw e;
                     }
@@ -1184,10 +1184,10 @@ function reset(){pause();n=0;time.textContent='0.0'}
             if(!cloudToken)await syncCloudPlan();
             const m=job.message;if(controller?.signal.aborted||job.cancelled)throw Error('Generation stopped.');
             m.remoteId=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
-            m.remoteAccepted=false;m.cancelRequested=false;m.remotePrefix=job.prefix||'';
+            m.remoteAccepted=false;m.remoteFinished=false;m.cancelRequested=false;m.remotePrefix=job.prefix||'';
             m.remoteRequest={model:(MODELS[job.model]||activeModel()).id,messages,max_tokens:max,stream:true,continuation:!!job.continuation,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:generationDepth||depth};
             persist();
-            const result=await waitForRemote(m);job.text=result;refresh();return result;
+            const result=await waitForRemote(m);job.text=result;refresh();persist();return result;
         }
         async function resumeRemoteGeneration(){
             if(busy||mode!=='cloud')return;
@@ -1201,9 +1201,9 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 m.content=prefix+mergeContinuation(prefix,result);m.truncated=!!job.truncated;m.error=undefined;
             }catch(e){m.error=String(e.message||e);m.content=prefix;}
             finally{
-                m.pending=false;m.seconds=Math.max(0,Math.round((Date.now()-m.ts)/1000));delete m.remoteRequest;delete m.remoteId;delete m.remoteAccepted;delete m.remotePrefix;delete m.cancelRequested;
+                m.pending=false;m.seconds=Math.max(0,Math.round((Date.now()-m.ts)/1000));delete m.remoteRequest;delete m.remoteId;delete m.remoteAccepted;delete m.remotePrefix;delete m.cancelRequested;delete m.remoteFinished;
                 busy=false;controller=null;job=null;persist();
-                if(current===owner){if(conversationView())finishMessage(m);else render();}updateControls();renderHistory();
+                if(current===owner){if(conversationView()){finishMessage(m);const workspace=$('feed').querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));}else render();}updateControls();renderHistory();cloudJSON('/v1/usage').then(d=>{cloudUsage=d;}).catch(()=>{});
             }
         }
         function killWorker() { if (worker) {
@@ -1439,9 +1439,9 @@ function reset(){pause();n=0;time.textContent='0.0'}
         document.addEventListener('focusin',updateKeyboard);document.addEventListener('focusout',()=>requestAnimationFrame(updateKeyboard));window.visualViewport?.addEventListener('resize',updateKeyboard);window.addEventListener('resize',updateKeyboard);
         window.addEventListener('pagehide',()=>{if(job&&job.message&&job.message.pending&&!job.message.remoteId)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();});
         document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){holdAwake();if(!busy)resumeRemoteGeneration();}else{if(job&&job.message&&job.message.pending&&!job.message.remoteId)job.message.content=(job.prefix||'')+mergeContinuation(job.prefix||'',job.text||'');persist();}});
-        function resizePrompt() { updateComposer(); const p = $('prompt'); p.style.height = 'auto'; p.style.height = Math.min(180, Math.max(44, p.scrollHeight)) + 'px'; requestAnimationFrame(() => { document.documentElement.style.setProperty('--composer-h', ($('composerWrap').getBoundingClientRect().height + (window.innerWidth < 940 ? 96 : 10)) + 'px'); }); }
+        function resizePrompt(){updateComposer();const p=$('prompt');p.style.height='auto';p.style.height=Math.min(180,Math.max(44,p.scrollHeight))+'px';requestAnimationFrame(()=>{const nav=document.querySelector('.bottom-nav-wrap');const h=nav?nav.getBoundingClientRect().height:0;document.documentElement.style.setProperty('--composer-h',($('composerWrap').getBoundingClientRect().height+h+10)+'px');});}
         function stop() { if (!busy)
-            return;if(mode==='cloud'&&job&&job.message.remoteId){job.message.cancelRequested=true;persist();updateWorkStatus(job.message,'Cancelling generation');return;} controller === null || controller === void 0 ? void 0 : controller.abort(); if (job) {
+            return;if(mode==='cloud'&&job&&job.message.remoteId){if(job.message.remoteFinished){job.skipReveal=true;return;}job.message.cancelRequested=true;persist();updateWorkStatus(job.message,'Cancelling generation');return;} controller === null || controller === void 0 ? void 0 : controller.abort(); if (job) {
             job.cancelled = true;
             let j = job;
             if (mode === 'local' && worker) {
@@ -1653,7 +1653,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             async function reveal(text){
                 if(!text.startsWith(prefix))visible='';
                 const initial=visible.length,started=performance.now(),duration=settings.reducedMotion?0:Math.min(5000,Math.max(320,(text.length-initial)/4));
-                await new Promise(resolve=>{const frame=now=>{if(!job||job.cancelled||document.visibilityState==='hidden'){resolve();return;}const t=duration?Math.min(1,(now-started)/duration):1;const end=Math.min(text.length,initial+Math.ceil((text.length-initial)*t));visible=text.slice(0,end);const node=answerNode();if(node){renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(job.follow&&!job.readingCode)followLatest();}if(t<1)raf=requestAnimationFrame(frame);else resolve();};raf=requestAnimationFrame(frame);});
+                await new Promise(resolve=>{const frame=now=>{if(!job||job.cancelled||job.skipReveal||document.visibilityState==='hidden'){resolve();return;}const t=duration?Math.min(1,(now-started)/duration):1;const end=Math.min(text.length,initial+Math.ceil((text.length-initial)*t));visible=text.slice(0,end);const node=answerNode();if(node){renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(job.follow&&!job.readingCode)followLatest();}if(t<1)raf=requestAnimationFrame(frame);else resolve();};raf=requestAnimationFrame(frame);});
             }
             async function generate(msgs, max) { if (mode === 'local')
                 return await new Promise((resolve, reject) => { Object.assign(job, { id: ++activeReq, resolve, reject }); worker.postMessage({ type: 'generate', id: job.id, messages: msgs, max, task:resolvedTask }); }); return mode==='cloud'?await runCloud(msgs,max,refresh,resolvedTask,chosen,ids):await runAPI(msgs,max,refresh); }
@@ -1711,7 +1711,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 generationDepth = null;
                 releaseAwake();
                 Object.assign(assistantMsg, { content: result, truncated:!!(job&&job.truncated)||!!(error&&prefix), pending: false, seconds: Math.round((performance.now() - start) / 1000), error: error || undefined });
-                const readingCode=!!(job&&(job.readingCode||!job.follow));job=null;delete assistantMsg.remoteRequest;delete assistantMsg.remoteId;delete assistantMsg.remoteAccepted;delete assistantMsg.remotePrefix;delete assistantMsg.cancelRequested;
+                const readingCode=!!(job&&(job.readingCode||!job.follow));job=null;delete assistantMsg.remoteRequest;delete assistantMsg.remoteId;delete assistantMsg.remoteAccepted;delete assistantMsg.remotePrefix;delete assistantMsg.cancelRequested;delete assistantMsg.remoteFinished;
                 persist();
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('SoluneAI',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
@@ -1761,7 +1761,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         on($('micBtn'), 'click', speech);
         const sendButton=$('sendBtn');
         // Keep the composer in its current layout until the tap is dispatched.
-        let lastSendTap=0,tapStart=null;
+        let lastSendTap=-Infinity,tapStart=null;
         on(sendButton,'pointerdown',e=>{if(e.button!==0||sendButton.disabled)return;sendingTap=true;tapStart={x:e.clientX,y:e.clientY,id:e.pointerId};e.preventDefault();try{sendButton.setPointerCapture(e.pointerId);}catch(_){}});
         on(sendButton,'pointerup',e=>{if(!tapStart||tapStart.id!==e.pointerId)return;const valid=Math.hypot(e.clientX-tapStart.x,e.clientY-tapStart.y)<22;tapStart=null;sendingTap=false;e.preventDefault();if(valid&&!sendButton.disabled){lastSendTap=performance.now();send();}});
         on(sendButton,'pointercancel',()=>{tapStart=null;sendingTap=false;});
