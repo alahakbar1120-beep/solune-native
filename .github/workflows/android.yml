@@ -45,23 +45,23 @@ jobs:
           unzip -l "$APK" | grep 'lib/arm64-v8a/libsolune.so'
       - uses: actions/upload-artifact@v4
         with:
-          name: SoluneAI-2.5-debug
+          name: SoluneAI-2.6-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-      - name: Publish SoluneAI 2.5 APK release
+      - name: Publish SoluneAI APK release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           VERSION=$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)
-          test "$VERSION" = "2.5"
+          test -n "$VERSION"
           APK="SoluneAI-${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           sha256sum "$APK" > "$APK.sha256"
           TAG="v${VERSION}"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "SoluneAI $VERSION" --notes "Android ARM64 debug-signed APK. Code Studio, editable workspace files, sandboxed HTML preview, streaming responses and updated branding."
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "SoluneAI $VERSION" --notes "Android ARM64 debug-signed APK. Continuous answers, follow scrolling, buffered generation, shared 24-hour quotas and Code Studio."
           fi
           gh release upload "$TAG" "$APK" "$APK.sha256" --clobber
           gh release view "$TAG" --json url,assets
