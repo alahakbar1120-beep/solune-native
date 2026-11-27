@@ -29,7 +29,9 @@ db=sqlite3.connect(str(Path(data_dir)/"usage.sqlite3") if data_dir else ":memory
 db.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY,value TEXT NOT NULL)")
 db.execute("CREATE TABLE IF NOT EXISTS usage (identity TEXT PRIMARY KEY,start INTEGER NOT NULL,tokens INTEGER NOT NULL,lifetime INTEGER NOT NULL,requests INTEGER NOT NULL)")
 db.execute("CREATE TABLE IF NOT EXISTS accounts (identity TEXT PRIMARY KEY, recovery_hash TEXT UNIQUE NOT NULL, plan TEXT NOT NULL)")
+db.execute("CREATE TABLE IF NOT EXISTS jobs (identity TEXT NOT NULL,id TEXT NOT NULL,state TEXT NOT NULL,stage TEXT NOT NULL,progress TEXT NOT NULL,answer TEXT NOT NULL,error TEXT NOT NULL,truncated INTEGER NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(identity,id))")
 with db:
+    db.execute("UPDATE jobs SET state='interrupted',error='Server restarted during generation. Retry when ready.' WHERE state IN ('queued','running')")
     db.execute("INSERT OR IGNORE INTO config VALUES (?,?)",("signing_key",secrets.token_hex(32)))
 SIGN=bytes.fromhex(db.execute("SELECT value FROM config WHERE key=?",("signing_key",)).fetchone()[0])
 attempts=collections.deque()
@@ -74,7 +76,7 @@ class Chat(BaseModel):
 def index():
     return FileResponse(Path(__file__).with_name("index.html"),headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"})
 @app.get("/health")
-def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"version":"2.8"}
+def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"version":"2.9"}
 @app.get("/v1/models")
 def profiles():
     return {"object":"list","data":[{"id":PROFILE_IDS[k],"name":name,"object":"model","kind":"assistant_profile","code_only":k=="onyx","code_supported":k!="paper","requires_pro":k in ("onyx","opal")} for k,name in PROFILE_NAMES.items()]}
@@ -262,6 +264,9 @@ def complete(model,identity,plan,messages,budget,effort="medium",search=False,co
 @app.post("/v1/chat/completions")
 def chat(q:Chat,req:Request):
     plan,identity=principal(req)
+    return StreamingResponse(prepare_chat(q,plan,identity),media_type="text/event-stream",headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+def prepare_chat(q,plan,identity,managed=False,cancelled=lambda:False):
     if not has_account(identity):raise HTTPException(428,"Create or restore an account first.")
     q.model=PROFILE_BY_ID.get(q.model,q.model)
     skills=set(q.skills)
@@ -312,7 +317,7 @@ def chat(q:Chat,req:Request):
     direct=identity_answer(q,identity_question) if not q.continuation and q.task not in ("image","web","research") and not web_requested else None
     if direct:
         slots.release()
-        return StreamingResponse(iter([content_event(direct),"data: [DONE]\n\n"]),media_type="text/event-stream")
+        return iter([content_event(direct),"data: [DONE]\n\n"])
     def staged():
         try:
             prompt=msgs
@@ -355,4 +360,78 @@ def chat(q:Chat,req:Request):
         except HTTPException as e:yield event({"error":str(e.detail),"status":e.status_code})
         except (ValueError,requests.RequestException):yield event({"error":"Cloud response unavailable."})
         finally:slots.release()
-    return StreamingResponse(staged(),media_type="text/event-stream",headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+    return staged()
+
+# Detached generation survives client disconnection. Results belong to the authenticated account.
+class JobCreate(BaseModel):
+    id:str=Field(min_length=20,max_length=80,pattern=r"^[a-zA-Z0-9_-]+$")
+    request:Chat
+
+def job_cancelled(identity,jid):
+    with lock:
+        row=db.execute("SELECT state FROM jobs WHERE identity=? AND id=?",(identity,jid)).fetchone()
+        return not row or row[0]=="cancelled"
+
+def update_job(identity,jid,**fields):
+    fields={k:v for k,v in fields.items() if k in {"state","stage","progress","answer","error","truncated"}}
+    if not fields:return
+    with lock,db:
+        db.execute("UPDATE jobs SET "+",".join(k+"=?" for k in fields)+",updated=? WHERE identity=? AND id=? AND state!='cancelled'",(*fields.values(),int(time.time()),identity,jid))
+
+def job_snapshot(identity,jid,plan):
+    with lock:
+        r=db.execute("SELECT state,stage,progress,answer,error,truncated,created,updated FROM jobs WHERE identity=? AND id=?",(identity,jid)).fetchone()
+    if not r:raise HTTPException(404,"Generation not found.")
+    state,stage,progress,answer,error,truncated,created,updated=r
+    return {"id":jid,"state":state,"stage":stage,"plan":json.loads(progress) if plan!="free" else [],"answer":answer if state in ("done","failed","interrupted","cancelled") else "","error":error,"truncated":bool(truncated),"created":created,"updated":updated}
+
+def work_job(identity,jid,q,plan):
+    stream=None;answer="";truncated=False
+    try:
+        if job_cancelled(identity,jid):return
+        update_job(identity,jid,state="running",stage="Preparing request")
+        stream=prepare_chat(q,plan,identity,managed=True,cancelled=lambda:job_cancelled(identity,jid))
+        for chunk in stream:
+            if job_cancelled(identity,jid):break
+            raw=chunk.strip().removeprefix("data: ")
+            if raw=="[DONE]":
+                update_job(identity,jid,state="done",stage="Answer ready",answer=answer,truncated=int(truncated))
+                return
+            o=json.loads(raw)
+            if "error" in o:
+                update_job(identity,jid,state="failed",error=str(o["error"]),answer=answer,truncated=int(truncated));return
+            if "stage" in o:update_job(identity,jid,stage=str(o["stage"])[:180])
+            if "plan" in o:update_job(identity,jid,progress=json.dumps(o["plan"],ensure_ascii=False))
+            if "truncated" in o:truncated=bool(o["truncated"])
+            answer+=(o.get("choices") or [{}])[0].get("delta",{}).get("content","")
+        if not job_cancelled(identity,jid):update_job(identity,jid,state="interrupted",error="Generation ended before completion.",answer=answer)
+    except HTTPException as e:update_job(identity,jid,state="failed",error=str(e.detail),answer=answer)
+    except Exception:update_job(identity,jid,state="failed",error="Generation failed. Please retry.",answer=answer)
+    finally:
+        if stream is not None and hasattr(stream,"close"):stream.close()
+
+@app.post("/v1/jobs")
+def create_job(q:JobCreate,req:Request):
+    plan,identity=principal(req)
+    if not has_account(identity):raise HTTPException(428,"Create or restore an account first.")
+    now=int(time.time())
+    with lock,db:
+        db.execute("DELETE FROM jobs WHERE updated<? AND state NOT IN ('queued','running')",(now-7*86400,))
+        if db.execute("SELECT 1 FROM jobs WHERE identity=? AND id=?",(identity,q.id)).fetchone():return job_snapshot(identity,q.id,plan)
+        if db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]>=2:raise HTTPException(429,"Server busy. Try again later.")
+        if db.execute("SELECT 1 FROM jobs WHERE identity=? AND state IN ('queued','running')",(identity,)).fetchone():raise HTTPException(409,"You already have an active generation.")
+        db.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",(identity,q.id,"queued","Preparing request","[]","","",0,now,now))
+    threading.Thread(target=work_job,args=(identity,q.id,q.request,plan),daemon=True).start()
+    return job_snapshot(identity,q.id,plan)
+
+@app.get("/v1/jobs/{jid}")
+def get_job(jid:str,req:Request):
+    plan,identity=principal(req)
+    return job_snapshot(identity,jid,plan)
+
+@app.post("/v1/jobs/{jid}/cancel")
+def cancel_job(jid:str,req:Request):
+    plan,identity=principal(req)
+    with lock,db:
+        db.execute("UPDATE jobs SET state='cancelled',stage='Cancelled',error='Generation stopped.',updated=? WHERE identity=? AND id=? AND state IN ('queued','running')",(int(time.time()),identity,jid))
+    return job_snapshot(identity,jid,plan)
