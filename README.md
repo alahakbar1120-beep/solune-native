@@ -1,4 +1,4 @@
-# SoluneAI 2.7
+# SoluneAI 2.8
 
 Android and browser AI chat with a shared English interface, local chat history, coding workspaces, and sandboxed HTML/SVG artifacts. Cloud is the default. Solune is an assistant product using third-party models, not independently trained weights.
 
@@ -7,10 +7,10 @@ Android and browser AI chat with a shared English interface, local chat history,
 | Solune Paper 2.8 | Fast answers for everyday questions |
 | Solune Marble 2.5 | Balanced intelligence for everyday tasks and creativity |
 | Solune Opal 2.1 | Advanced reasoning, coding and complex tasks |
-| Solune Onyx 3.5 | Code Studio exclusive, Pro and Dev |
+| Solune Onyx 3.5 | MiniMax M3.1 Flash, Code Studio exclusive, Pro and Dev |
 
 ## APK
-Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads SoluneAI-2.7-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
+Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads SoluneAI-2.8-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
 
 ## Cloud
 Railway serves the API and shared UI at https://solune-cloud-production.up.railway.app. Set NVIDIA_API_KEY and plan passwords in Railway Variables. No HF_TOKEN required. Verify live generation before release.
