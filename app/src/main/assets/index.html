@@ -838,7 +838,7 @@ try {
                 if(m.languageWarning) body.append(newEl('p','language-warning','The response may not match your requested language.'));
         }
         function finishMessage(m){const wrap=messageNodes.get(m);if(!wrap||!wrap.isConnected)return;const body=wrap.querySelector('.assist-body');if(!body)return;renderAnswer(body,m.content||'',m.task,true,m.demo);appendResponseExtras(body,m);const th=wrap.querySelector('.thinking');if(th){th.classList.add('done');th.innerHTML='<span class="spinner">'+icon(m.error?'info':'check')+'</span><span>'+ (m.error?'Interrupted':'Answered in '+(m.seconds||'&lt;1')+' s')+'</span>';}}
-        let studioTab='chat',studioFile='',studioPreview='',studioEditor=null;
+        let studioTab='chat',studioFile='',studioPreview='';
         function collectWorkspaceFiles(c){
             const files=new Map();
             if(!c)return files;
@@ -849,10 +849,10 @@ try {
                     const info=x[1].trim().split(/\s+/),lang=(info[0]||'text').toLowerCase();
                     const raw=info[1]||('snippet.'+(ext[lang]||'txt'));
                     const name=raw.split(/[\\/]/).pop().replace(/[^a-zA-Z0-9_.-]/g,'_')||'snippet.txt';
-                    files.set(name,{name,lang,body:x[2]});
+                    files.set(name,{name,lang,body:x[2],revision:String(m.ts||0)+':'+x.index});
                 }
             }
-            for(const edit of Object.values(c.files||{})){if(edit&&typeof edit.name==='string'&&typeof edit.body==='string')files.set(edit.name,edit);}
+            for(const edit of Object.values(c.files||{})){if(edit&&typeof edit.name==='string'&&typeof edit.body==='string'&&(!files.has(edit.name)||!edit.revision||files.get(edit.name).revision===edit.revision))files.set(edit.name,edit);}
             return files;
         }
         function setStudioTab(tab){studioTab=tab;render();}
@@ -881,11 +881,11 @@ try {
             if(!file){panel.append(newEl('div','studio-empty',icon('code')+'<b>No files yet</b><small>Ask the assistant to generate a named file.</small>'));return panel;}
             const toolbar=newEl('div','studio-file-toolbar');
             toolbar.append(newEl('span','',esc(file.name)),action('copy','Copy file',()=>copy(editor.value)),action('download','Download file',()=>download(editor.value,file.name,file.lang==='html'?'text/html':'text/plain')));
-            const editor=document.createElement('textarea');editor.className='studio-editor';editor.value=file.body;editor.spellcheck=false;editor.setAttribute('aria-label','File contents');editor.setAttribute('autocapitalize','off');editor.setAttribute('autocomplete','off');editor.wrap='off';studioEditor=editor;
+            const editor=document.createElement('textarea');editor.className='studio-editor';editor.value=file.body;editor.spellcheck=false;editor.setAttribute('aria-label','File contents');editor.setAttribute('autocapitalize','off');editor.setAttribute('autocomplete','off');editor.wrap='off';
             const meta=newEl('div','studio-editor-meta','');const sync=()=>{meta.textContent=editor.value.split('\n').length+' lines · '+editor.value.length+' characters';};sync();
-            const saveBtn=newEl('button','card-btn primary','Save changes');saveBtn.onclick=()=>{c.files=c.files||{};c.files[file.name]={name:file.name,lang:file.lang,body:editor.value};persist();toast('File saved');sync();};
-            const ask=newEl('button','card-btn','Ask assistant');ask.onclick=()=>{c.files=c.files||{};c.files[file.name]={name:file.name,lang:file.lang,body:editor.value};persist();studioTab='chat';render();$('prompt').value='Review and improve '+file.name+':\n'+editor.value;resizePrompt();$('prompt').focus();};
-            editor.addEventListener('input',sync);const actions=newEl('div','studio-actions');actions.append(saveBtn,ask);panel.append(toolbar,editor,meta,actions);return panel;
+            const saveEdit=()=>{c.files=c.files||{};c.files[file.name]={name:file.name,lang:file.lang,body:editor.value,revision:file.revision||''};persist();};const saveBtn=newEl('button','card-btn primary','Save changes');saveBtn.onclick=()=>{saveEdit();toast('File saved');sync();};
+            const ask=newEl('button','card-btn','Ask assistant');ask.onclick=()=>{saveEdit();studioTab='chat';render();$('prompt').value='Review and improve '+file.name+':\n'+editor.value;resizePrompt();$('prompt').focus();};
+            editor.addEventListener('input',()=>{sync();saveEdit();});const actions=newEl('div','studio-actions');actions.append(saveBtn,ask);panel.append(toolbar,editor,meta,actions);return panel;
         }
         function studioPreviewView(c){
             const panel=newEl('section','studio-panel'),files=[...collectWorkspaceFiles(c).values()].filter(f=>f.lang==='html'||/\.html?$/i.test(f.name));
@@ -1612,7 +1612,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('SoluneAI',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
                 let thread = $('feed').querySelector('.thread');
-                if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();}
+                if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();if(view==='code'&&codeOpen&&current===owner&&studioTab!=='chat'){const hint=newEl('button','card-btn studio-refresh','New response ready · Refresh files');hint.onclick=()=>render();const panel=$('feed').querySelector('.studio-panel');if(panel)panel.prepend(hint);}}
                 if(stick&&!readingCode&&current===owner&&conversationView())scrollToBottom(true);
                 if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
             }
