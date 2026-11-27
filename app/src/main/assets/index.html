@@ -674,7 +674,7 @@ try {
             const svgPreview=action('image','Preview SVG',()=>{const currentSvg=getSVG(code);if(currentSvg)togglePreview(svgEncode(currentSvg),'SVG');else toast('SVG is not complete yet');});
             tools.append(action('copy','Copy',()=>copy(code)),action('download','Download file',()=>download(code,name,ext==='html'?'text/html':ext==='svg'?'image/svg+xml':'text/plain')),preview,svgPreview);
             top.append(label,tools);box.append(top,pre,more);
-            more.onclick=()=>{manual=true;expanded=!expanded;pre.classList.toggle('code-collapsed',!expanded);more.textContent=expanded?'Collapse code':'Show full code';};
+            more.onclick=()=>{if(job)job.readingCode=true;manual=true;expanded=!expanded;pre.classList.toggle('code-collapsed',!expanded);more.textContent=expanded?'Collapse code':'Show full code';};
             box.updateCode=(next,isLive)=>{
                 if(next===last&&isLive===lastLive)return;
                 code=next;
@@ -739,7 +739,7 @@ try {
                         if(!state.card||state.info!==info){state.card=codeCard(info,body,open);state.info=info;state.el.replaceChildren(state.card);}
                         else state.card.updateCode(body,open);
                     }
-                }else{state.el.replaceChildren();renderTextSegment(state.el,part);}
+                }else{const next=newEl('div');renderTextSegment(next,part);const fresh=[...next.children];for(let k=0;k<fresh.length;k++){const existing=state.el.children[k];if(!existing){state.el.append(fresh[k]);}else if(existing.tagName!==fresh[k].tagName){existing.replaceWith(fresh[k]);}else if(existing.innerHTML!==fresh[k].innerHTML){existing.innerHTML=fresh[k].innerHTML;}}while(state.el.children.length>fresh.length)state.el.lastElementChild.remove();}
                 state.part=part;state.open=open;
             }
             while(states.length>parts.length){states.pop().el.remove();}
@@ -1486,12 +1486,12 @@ function reset(){pause();n=0;time.textContent='0.0'}
                     lastPaint=now;const remaining=target.length-visible.length;
                     const take=Math.min(remaining,Math.max(12,Math.ceil(remaining/3)));
                     if(take>0)visible=target.slice(0,visible.length+take);
-                    const node=answerNode();if(node){const stick=isNearBottom();renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(stick)scrollToBottom(true);}
+                    const node=answerNode();if(node){const stick=isNearBottom()&&!job.readingCode;renderAnswer(node,visible,resolvedTask,false,mode==='demo');if(stick)scrollToBottom(true);}
                     if(visible!==target)raf=requestAnimationFrame(frame);
                 };
                 raf=requestAnimationFrame(frame);
             };
-            job = { id, text: '', refresh, cancelled: false,owner,message:assistantMsg };
+            job = { id, text: '', refresh, cancelled: false,owner,message:assistantMsg };updateControls();
             async function generate(msgs, max) { if (mode === 'local')
                 return await new Promise((resolve, reject) => { Object.assign(job, { id: ++activeReq, resolve, reject }); worker.postMessage({ type: 'generate', id: job.id, messages: msgs, max, task:resolvedTask }); }); return mode==='cloud'?await runCloud(msgs,max,refresh,resolvedTask,chosen,ids):await runAPI(msgs,max,refresh); }
             try {
@@ -1546,13 +1546,13 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 generationDepth = null;
                 releaseAwake();
                 Object.assign(assistantMsg, { content: result, truncated:!!(job&&job.truncated), pending: false, seconds: Math.round((performance.now() - start) / 1000), error: error || undefined });
-                job = null;
+                const readingCode=!!(job&&job.readingCode);job=null;
                 persist();
                 if(settings.notifyDone&&document.visibilityState==='hidden'&&!error&&window.Notification&&Notification.permission==='granted'){try{new Notification('Solune',{body:'Response from '+activeModel().name+' is ready'});}catch(e){}}
                 let stick = isNearBottom();
                 let thread = $('feed').querySelector('.thread');
                 if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();}
-                if(stick&&current===owner&&conversationView())scrollToBottom(true);
+                if(stick&&!readingCode&&current===owner&&conversationView())scrollToBottom(true);
                 if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
             }
         }
@@ -1599,7 +1599,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         on($('previewClose'), 'click', closePreview);
         on($('previewModal'), 'click', e => { if (e.target === $('previewModal'))
             closePreview(); });
-        on($('scrollFab'), 'click', () => scrollToBottom(true));
+        on($('scrollFab'),'click',()=>{if(job)job.readingCode=false;scrollToBottom(true);});
         on($('historySearch'), 'input', renderHistory);
         for (const b of document.querySelectorAll('.tabbtn'))
             on(b, 'click', () => setView(b.dataset.view));
