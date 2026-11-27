@@ -218,3 +218,57 @@ jobs:
           assert(node.textContent.includes('Finished.'));
           console.log('Streaming DOM regression passed');
           JS
+
+      - name: Test mobile composer and detached job recovery in DOM
+        run: |
+          NODE_PATH=/tmp/solune-dom/node_modules node <<'JS'
+          const {JSDOM}=require('jsdom'),fs=require('fs'),assert=require('node:assert/strict');
+          const source=fs.readFileSync('app/src/main/assets/index.html','utf8');
+          const calls=[];
+          let done=false;
+          const json=(data,status=200)=>({ok:status<400,status,json:async()=>data});
+          const dom=new JSDOM(source,{url:'https://solune.local/index.html',runScripts:'dangerously',pretendToBeVisual:true,beforeParse(w){
+            w.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});
+            w.localStorage.setItem('solune-cloud-session','test-session');
+            w.localStorage.setItem('marble15-plan','pro');
+            w.localStorage.setItem('marble15-settings',JSON.stringify({reducedMotion:true}));
+            w.fetch=async(url,opts={})=>{
+              const path=new URL(url,'https://solune.local').pathname;calls.push({path,opts});
+              if(path==='/v1/session')return json({plan:'pro',token:'test-session'});
+              if(path==='/v1/usage')return json({plan:'pro',account_linked:true,tokens_used:0,tokens_limit:300000,tokens_lifetime:0});
+              if(path==='/v1/jobs'&&opts.method==='POST'){const r=JSON.parse(opts.body);return json({state:'running',stage:'Create requested page',plan:[{label:'Plan',state:'done'},{label:'Implement',state:'running'}],id:r.id});}
+              if(path.startsWith('/v1/jobs/'))return json(done?{state:'done',stage:'Answer ready',answer:'Completed successfully',plan:[{label:'Plan',state:'done'},{label:'Implement',state:'done'}]}:{state:'running',stage:'Implement requested changes',plan:[{label:'Plan',state:'done'},{label:'Implement',state:'running'}]});
+              throw Error('Unexpected request '+path);
+            };
+          }});
+          const w=dom.window,d=w.document;
+          const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          (async()=>{
+            await wait(80);
+            assert.equal(d.documentElement.classList.contains('app-ready'),true,d.getElementById('bootError').textContent);
+            const prompt=d.getElementById('prompt'),send=d.getElementById('sendBtn');
+            prompt.focus();w.soluneKeyboardChanged(true);
+            assert(d.body.classList.contains('keyboard-open'));
+            prompt.value='Test mobile send';prompt.dispatchEvent(new w.Event('input',{bubbles:true}));
+            const tap=type=>{const e=new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:10,clientY:10});Object.defineProperty(e,'pointerId',{value:1});send.dispatchEvent(e);};
+            tap('pointerdown');tap('pointerup');send.click();
+            await wait(100);
+            assert.equal(calls.filter(x=>x.path==='/v1/jobs').length,1);
+            assert.equal(d.activeElement,prompt);
+            assert(d.body.classList.contains('keyboard-open'));
+            const saved=JSON.parse(w.localStorage.getItem('marble15-chats'));
+            const pending=saved.flatMap(c=>c.messages).find(m=>m.pending);
+            assert(pending.remoteId&&pending.remoteAccepted);
+            assert.equal(pending.remoteRequest,undefined);
+            assert(d.querySelector('.work-details details'));
+            done=true;
+            await wait(1700);
+            const result=JSON.parse(w.localStorage.getItem('marble15-chats')).flatMap(c=>c.messages).find(m=>m.role==='assistant');
+            assert.equal(result.content,'Completed successfully');
+            assert.equal(result.pending,false);
+            assert.equal(result.remoteId,undefined);
+            assert.equal(calls.filter(x=>x.path==='/v1/jobs').length,1);
+            console.log('Mobile pointer send and persistent remote job regression passed');
+            w.close();
+          })().catch(e=>{console.error(e);w.close();process.exitCode=1;});
+          JS
