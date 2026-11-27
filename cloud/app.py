@@ -57,7 +57,7 @@ class Chat(BaseModel):
 def index():
     return FileResponse(Path(__file__).with_name("index.html"),headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"})
 @app.get("/health")
-def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS)}
+def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"provider":"nvidia","version":"2.3"}
 @app.post("/v1/session")
 def session(req:Request):
     if req.headers.get("Authorization"):
@@ -100,14 +100,15 @@ PROFILE_STYLE={
 def identity_answer(q, text):
     t=text.strip().lower().rstrip("?!., ")
     name=PROFILE_NAMES[q.model]
+    backend=CODE_MODEL if q.task=="code" else MODELS[q.model]
     # Only exact identity questions; never overwrite an unrelated answer or a provenance request.
     if t in ("who are you","what model are you","what is your name","which model are you","кто ты","какая ты модель","как тебя зовут","ты какая модель","что ты за модель","ты кто","как ты называешься","какая у тебя модель","какой ты модели","хто ти","яка ти модель"):
         if re.search(r"[а-яёіїєґ]",t): return "Я — "+name+"."
         if re.search(r"[іїєґ]",t): return "Я — "+name+"."
         return "I'm "+name+"."
     if t in ("what are you based on","what is your base model","are you gpt-4","are you gpt 4","на чем ты основан","на чём ты основан","на какой модели ты основан","ты gpt-4","ты гпт 4","ты gpt 4","ты гпт-4"):
-        if re.search(r"[а-яё]",t): return name+" — профиль Solune, использующий "+MODELS[q.model]+". Это не GPT-4 и не отдельно обученная модель Solune."
-        return name+" is a Solune profile powered by "+MODELS[q.model]+", not GPT-4 or independently trained Solune weights."
+        if re.search(r"[а-яё]",t): return name+" — профиль Solune, использующий "+backend+". Это не GPT-4 и не отдельно обученная модель Solune."
+        return name+" is a Solune profile powered by "+backend+", not GPT-4 or independently trained Solune weights."
     return None
 
 def svg_valid(text):
@@ -166,7 +167,8 @@ def call_upstream(model,identity,plan,messages,budget,effort,stream=True,search=
     row=reserve(model,identity,plan,messages,budget)
     backend=CODE_MODEL if code else MODELS[model]
     payload={"model":backend,"messages":messages,"max_tokens":budget,"stream":stream,"temperature":0.6,"top_p":0.95}
-    if not code:payload["chat_template_kwargs"]={"enable_thinking":effort in ("medium","high")}
+    if not code:payload["chat_template_kwargs"]={"enable_thinking":effort=="high" or (effort=="medium" and model=="opal")}
+    if stream:payload["stream_options"]={"include_usage":True}
     upstream=None
     try:
         with lock:order=[active]+[i for i in range(len(KEYS)) if i!=active]
@@ -208,6 +210,13 @@ def chat(q:Chat,req:Request):
     plan,identity=principal(req)
     skills=set(q.skills)
     if not skills.issubset({"img","code","deep","instant","web","research"}):raise HTTPException(400,"Unknown skill.")
+    if {"code","img"}<=skills:raise HTTPException(400,"Code and image are separate tasks.")
+    if q.task=="chat":
+        if "code" in skills:q.task="code"
+        elif "img" in skills:q.task="image"
+        elif "research" in skills:q.task="research"
+        elif "web" in skills:q.task="web"
+        elif "deep" in skills:q.task="deep"
     if q.task in ("code","image") and (("img" in skills and q.task=="code") or ("code" in skills and q.task=="image")):raise HTTPException(400,"Code and image are separate tasks.")
     if "instant" in skills and skills.intersection({"deep","research"}):raise HTTPException(400,"Quick and deep modes conflict.")
     if "research" in skills and plan=="free" or "deep" in skills and plan=="free" or "code" in skills and plan=="free":raise HTTPException(403,"Pro or Dev required.")
@@ -243,7 +252,7 @@ def chat(q:Chat,req:Request):
     web_requested=q.task in ("web","research") or bool(skills.intersection({"web","research"}))
     review_requested=q.task in ("image","deep","research") or bool(skills.intersection({"deep","research"}))
     special=web_requested or review_requested
-    direct=identity_answer(q,question) if q.task=="chat" else None
+    direct=identity_answer(q,question) if q.task not in ("image","web","research") and not web_requested else None
     if direct:
         slots.release()
         return StreamingResponse(iter([content_event(direct),"data: [DONE]\n\n"]),media_type="text/event-stream")
