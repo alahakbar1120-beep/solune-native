@@ -61,7 +61,7 @@ jobs:
               r=c.post("/v1/chat/completions",json=q,headers=h)
               assert r.status_code==200 and "[DONE]" in r.text and "hello" in r.text and p.call_count==1
               assert p.call_args.kwargs["json"]["stream"] is False
-              assert r.text.index("Thinking")<r.text.index("Answer ready")<r.text.index("hello")
+              assert r.text.index("Preparing answer")<r.text.index("Answer ready")<r.text.index("hello")
           with patch("app.requests.post",return_value=Complete(status=429)) as p:
               r=c.post("/v1/chat/completions",json=q,headers=h)
               assert '"status": 429' in r.text and p.call_count==1
@@ -147,7 +147,44 @@ jobs:
           with patch("app.requests.post",return_value=Complete("A regular answer")) as p:
               r=c.post("/v1/chat/completions",json=request("marble",question="Explain what models are used in machine learning"),headers=hp)
               assert "A regular answer" in r.text and p.call_count==1
-          print("Gateway mock tests passed")
+          # Simulate closing the client immediately after submission and reconnecting.
+          import threading,time,uuid
+          entered=threading.Event()
+          release=threading.Event()
+          responses=[Complete('{"implementation":"Build a calculator interface","review":"Review calculation edge cases"}'),Complete("Draft code"),Complete("Final calculator")]
+          def detached_reply(*args,**kwargs):
+              item=responses.pop(0)
+              if item.content=="Draft code":
+                  entered.set()
+                  assert release.wait(5)
+              return item
+          jid=uuid.uuid4().hex
+          payload={"id":jid,"request":request("onyx","code",question="Create a calculator")}
+          with patch("app.requests.post",side_effect=detached_reply) as p:
+              accepted=c.post("/v1/jobs",json=payload,headers=hp)
+              assert accepted.status_code==200
+              assert entered.wait(5)
+              before=c.get("/v1/jobs/"+jid,headers=hp).json()
+              assert before["state"]=="running" and before["stage"]=="Build a calculator interface"
+              assert before["plan"][0]["state"]=="done" and before["plan"][1]["state"]=="running"
+              duplicate=c.post("/v1/jobs",json=payload,headers=hp)
+              assert duplicate.status_code==200
+              other=c.post("/v1/session").json()
+              other_h={"Authorization":"Bearer "+other["token"]}
+              assert c.get("/v1/jobs/"+jid,headers=other_h).status_code==404
+              release.set()
+              for _ in range(80):
+                  final=c.get("/v1/jobs/"+jid,headers=hr).json()
+                  if final["state"] in ("done","failed"):break
+                  time.sleep(.05)
+              assert final["state"]=="done" and final["answer"]=="Final calculator"
+              assert all(step["state"]=="done" for step in final["plan"])
+              assert p.call_count==3 and not responses
+          # Free users cannot retrieve expanded progress, including after plan downgrade.
+          free=c.post("/v1/unlock",json={"plan":"free","password":""},headers=hp).json()
+          hf={"Authorization":"Bearer "+free["token"]}
+          assert c.get("/v1/jobs/"+jid,headers=hf).json()["plan"]==[]
+          print("Gateway mock and detached generation tests passed")
           PY
 
       - name: Test incremental rendering with real DOM
