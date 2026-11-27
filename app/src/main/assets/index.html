@@ -408,7 +408,7 @@ body.theme-light .toast{background:#292622;color:white}
 try {
     (() => {
         var _a, _b;
-        const MODELS = { paper: { name: 'Solune Paper 2.8', base: 'SmolLM2-360M-Instruct', repo: 'onnx-community/SmolLM2-360M-Instruct-ONNX', mb: 249, desc: 'Fast answers for everyday questions.', dtype: 'q8' }, marble: { name: 'Solune Marble 2.5', base: 'Qwen2.5-0.5B-Instruct', repo: 'onnx-community/Qwen2.5-0.5B-Instruct', mb: 398, desc: 'Balanced intelligence for everyday tasks and creativity.', dtype: 'q8' }, opal: { name: 'Solune Opal 2.1', base: 'Qwen2.5-Coder-1.5B-Instruct', repo: 'onnx-community/Qwen2.5-Coder-1.5B-Instruct', mb: 1120, dtype: 'q4', desc: 'Advanced reasoning, coding and complex tasks.' } };
+        const MODELS = { paper: { id:'solune-paper-2.8', name: 'Solune Paper 2.8', base: 'SmolLM2-360M-Instruct', repo: 'onnx-community/SmolLM2-360M-Instruct-ONNX', mb: 249, desc: 'Fast answers for everyday questions.', dtype: 'q8' }, marble: { id:'solune-marble-2.5', name: 'Solune Marble 2.5', base: 'Qwen2.5-0.5B-Instruct', repo: 'onnx-community/Qwen2.5-0.5B-Instruct', mb: 398, desc: 'Balanced intelligence for everyday tasks and creativity.', dtype: 'q8' }, opal: { id:'solune-opal-2.1', name: 'Solune Opal 2.1', base: 'Qwen2.5-Coder-1.5B-Instruct', repo: 'onnx-community/Qwen2.5-Coder-1.5B-Instruct', mb: 1120, dtype: 'q4', desc: 'Advanced reasoning, coding and complex tasks.' } };
         let selectedModel = 'marble', loadedModel = null, installQueue = [], installed = [];
         const activeModel = () => MODELS[selectedModel];
         const $ = id => document.getElementById(id);
@@ -580,7 +580,7 @@ try {
         function systemPrompt(t,q='') {
             const lang=answerLanguage(q), name=activeModel().name;
             let p=lang==='Russian'?'Ты — '+name+' в приложении Solune. Ответь на ПОСЛЕДНИЙ вопрос пользователя по-русски. Не повторяй приветствие, не предлагай помощь вместо ответа. Если не знаешь — скажи.':lang==='Ukrainian'?'Ти — '+name+' у Solune. Відповідай на останнє запитання українською, без зайвих привітань.':'You are '+name+' in Solune. Answer the latest user question directly in English. Do not repeat greetings or offer help instead of answering. Admit uncertainty.';
-            p+=' Your displayed identity is '+name+'. Introduce yourself under this name. Do not claim to be GPT-4 or independently trained by Solune. For provenance questions say that Solune uses third-party language models without displaying internal technical IDs. Do not claim independent training.';
+            p+=' Your public profile ID is '+activeModel().id+'. Your displayed identity is '+name+'. Introduce yourself under this name. Do not claim to be GPT-4 or independently trained by Solune. For provenance questions say that Solune uses third-party language models without displaying internal technical IDs. Do not claim independent training.';
             if(/скилл|настрой|тариф|лимит|интерфейс|как (включить|переключить|открыть)|skills|settings/i.test(q))p+=' Solune: model selector changes model/depth; + or / opens skills. /img SVG, /code code, /deep review, /instant short; menu > Usage. Opal, code and deep require Pro/Dev. Explain navigation only.';
             if(t==='image')p+=' Create a polished complete SVG with xmlns and viewBox. Use coherent composition, layered shapes, intentional typography, original details and gradients. No scripts, markdown or external resources.';
             if(t==='code')p+=' Return complete runnable files in fenced code blocks. Use filename after language, e.g. html index.html. Prefer standalone HTML for preview. For revisions return the complete updated file.';
@@ -796,7 +796,7 @@ try {
             else {
                 const as = newEl('div', 'assistant');
                 const head = newEl('div', 'assist-head');
-                head.append(newEl('span', '', (((_a = MODELS[m.model]) === null || _a === void 0 ? void 0 : _a.name) || 'Solune Marble 2.5') + (m.demo ? ' · Demo' : '')));
+                head.append(newEl('span', '', (m.profileName||((_a=MODELS[m.model])===null||_a===void 0?void 0:_a.name)||'Solune Marble 2.5') + (m.demo ? ' · Demo' : '')));
                 as.append(head);
                 if (m.pending) {
                     const th = newEl('div', 'thinking');
@@ -868,9 +868,9 @@ try {
             $('modeBtn').innerHTML = '<span style="color:var(--text)">' + activeModel().name + '</span><span>' + depthNames[depth] + '</span>';
             $('viewBtn').innerHTML = PLANS[plan].name;
             $('viewBtn').setAttribute('aria-label', 'Plans');
-            $('sendBtn').innerHTML = icon(busy ? 'stop' : 'send');
+            $('sendBtn').innerHTML=icon(busy&&job&&current===job.owner?'stop':'send');
             $('sendBtn').disabled = !busy && !validPrompt();
-            $('sendBtn').setAttribute('aria-label', busy ? 'Stop' : 'Send');
+            $('sendBtn').setAttribute('aria-label',busy&&job&&current===job.owner?'Stop':'Send');
             $('note').textContent = mode==='cloud'?'Cloud · online':mode === 'demo' ? 'Demo · sample responses' : mode === 'api' ? 'External API' : ready ? 'Local engine ready' : loading ? 'Loading model…' : 'Model download required';
             const pill = $('modePill'), show = selectedSkills.length || skill || task !== 'chat';
             pill.classList.toggle('show', !!show);
@@ -968,12 +968,9 @@ try {
             tapCount = 0;
             openEngine();
         } }
-        function setView(v) { if(view==='chat')chatMemory=current;if(view==='code'&&codeOpen)codeMemory=current;if(v==='chat'){current=chatMemory&&chatMemory.kind!=='code'?chatMemory:null;task='chat';}if(v==='code'){codeOpen=!!codeMemory;current=codeMemory;task='code';}selectedSkills=[];skill='';view=v;render(); }
+        function setView(v) { if(v===view)return;if(view==='chat')chatMemory=current;if(view==='code'&&codeOpen)codeMemory=current;if(v==='chat'){current=chatMemory&&chatMemory.kind!=='code'?chatMemory:null;task='chat';}if(v==='code'){codeOpen=!!codeMemory;current=codeMemory;task='code';}selectedSkills=[];skill='';view=v;render(); }
         function openCoding(c,focus){if(view==='chat')chatMemory=current;current=c;codeMemory=c;view='code';codeOpen=true;task='code';skill='';selectedSkills=[];$('prompt').value='';resizePrompt();render();if(focus)$('prompt').focus();else scrollToBottom(true);}
-        function newChat(focus = false) { if (busy) {
-            toast('Stop the current response first');
-            return;
-        } if(view==='code'){openCoding(null,focus);return;} current = null; view = 'chat'; task = 'chat'; skill = '';selectedSkills=[]; $('prompt').value = ''; save('marble15-draft', ''); resizePrompt(); render(); setDrawer(false); if (focus)
+        function newChat(focus = false) { if(view==='code'){openCoding(null,focus);return;} current = null; view = 'chat'; task = 'chat'; skill = '';selectedSkills=[]; $('prompt').value = ''; save('marble15-draft', ''); resizePrompt(); render(); setDrawer(false); if (focus)
             $('prompt').focus(); }
         function editMessage(m) { if (busy)
             return; openSheet('Edit message', body => { const helper = newEl('p', 'helper', 'The edited message starts a new branch. Your original chat is preserved.'); const field = newEl('div', 'field'); const t = document.createElement('textarea'); t.rows = 6; t.value = m.content; field.append(newEl('label', '', 'New message'), t); const btn = newEl('button', 'card-btn primary', '<span>Send in new branch</span>'); on(btn, 'click', () => { const src = current; const idx = src.messages.indexOf(m); const fork = { id: Date.now(), title: (src.title || 'Chat') + ' · branch', kind:src.kind, created: Date.now(), messages: src.messages.slice(0, idx) }; chats.unshift(fork); current = fork; view = fork.kind==='code'?'code':'chat';codeOpen=fork.kind==='code'; task = m.task || 'chat';selectedSkills=m.skills||[]; $('prompt').value = t.value.trim(); resizePrompt(); closeSheet(); render(); send(); }); body.append(helper, field, btn); setTimeout(() => t.focus(), 20); }); }
@@ -1041,7 +1038,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
         } consume(buffer); return text; }
         async function runCloud(messages,max,refresh,taskType,chosen,ids=[]){
             if(!cloudToken)await syncCloudPlan();
-            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:selectedModel,messages,max_tokens:max,stream:true,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:chosen==='instant'?'low':(chosen==='deep'||chosen==='research')?'high':depth}),signal:controller.signal});
+            const r=await fetch(cloudBase+'/v1/chat/completions',{method:'POST',headers:cloudHeaders(),body:JSON.stringify({model:activeModel().id,messages,max_tokens:max,stream:true,task:chosen==='deep'&&taskType==='chat'?'deep':taskType,skills:ids,depth:chosen==='instant'?'low':(chosen==='deep'||chosen==='research')?'high':depth}),signal:controller.signal});
             if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401)setCloudPlan('free','');throw Error(typeof d.detail==='string'?d.detail:'Cloud error '+r.status);}
             if(!r.body)throw Error('Response stream unavailable');
             const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',text='',finished=false,truncated=false;
@@ -1107,7 +1104,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 body.append(status);
             });
         }
-        function openAbout() { openSheet('About Solune', body => { body.append(newEl('p', 'helper', 'Solune offers three branded assistant profiles powered by third-party AI models. The names describe product profiles, not newly trained weights. Cloud prompts are processed by an external service. Image creation produces SVG illustrations.')); const actions = newEl('div', 'settings-grid'); const b1 = newEl('button', 'list-btn', icon('download') + '<div class="meta"><b>Export chat</b><small>Save the current chat as Markdown</small></div>'); on(b1, 'click', () => { if (!current) {
+        function openAbout() { openSheet('About Solune', body => { body.append(newEl('p','helper','Solune offers three assistant profiles powered by third-party language models. Profile names and IDs are product identifiers, not newly trained weights. Cloud prompts are processed by an external service. Image creation produces SVG illustrations.'));for(const m of Object.values(MODELS))body.append(newEl('div','settings-card','<b>'+esc(m.name)+'</b><p class="helper">'+esc(m.id)+'</p>')); const actions = newEl('div', 'settings-grid'); const b1 = newEl('button', 'list-btn', icon('download') + '<div class="meta"><b>Export chat</b><small>Save the current chat as Markdown</small></div>'); on(b1, 'click', () => { if (!current) {
             toast('No open chat');
             return;
         } download(current.messages.map(m => (m.role === 'user' ? 'User' : 'Solune') + '\n' + m.content).join('\n\n'), 'solune-chat.md', 'text/markdown'); toast('Chat saved'); }); const b2 = newEl('button', 'list-btn', icon('brain') + '<div class="meta"><b>Open engine</b><small>Model downloads or API setup</small></div>'); on(b2, 'click', openEngine); actions.append(b1, b2); body.append(actions); }); }
@@ -1420,10 +1417,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             });
         }
         async function send() {
-            if (busy) {
-                stop();
-                return;
-            }
+            if(busy){if(job&&current===job.owner)stop();else toast('A response is running in another chat. Open it to stop generation.');return;}
             if(mode==='cloud'&&cloudSync)await cloudSync;
             if(busy)return;
             let q = $('prompt').value.trim();
@@ -1474,7 +1468,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             controller = new AbortController();
             holdAwake();
             generationDepth = chosen === 'instant' ? 'low' : chosen === 'deep' ? 'high' : depth;
-            const assistantMsg = { role: 'assistant', content: '', task: resolvedTask, skill: chosen, skills:ids, model: selectedModel, ts: Date.now(), pending: true, animate:true, demo: mode === 'demo' };
+            const assistantMsg = { role: 'assistant', content: '', task: resolvedTask, skill: chosen, skills:ids, model: selectedModel, profileName:activeModel().name, profileId:activeModel().id, ts: Date.now(), pending: true, animate:true, demo: mode === 'demo' };
             owner.messages.push(assistantMsg);
             resizePrompt();
             render();
@@ -1558,9 +1552,8 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 let stick = isNearBottom();
                 let thread = $('feed').querySelector('.thread');
                 if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();}
-                if (stick)
-                    scrollToBottom(true);
-                if (error && error !== 'Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
+                if(stick&&current===owner&&conversationView())scrollToBottom(true);
+                if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openPlans();}
             }
         }
         function isNearBottom() { const f = $('feed'); return f.scrollHeight - f.scrollTop - f.clientHeight < 180; }
