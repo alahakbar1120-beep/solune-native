@@ -39,10 +39,10 @@ jobs:
           import os
           from unittest.mock import patch
           from fastapi.testclient import TestClient
-          os.environ.update(GROQ_API_KEY="fake-1",GROQ_API_KEY_2="fake-2",SOLUNE_PRO_PASSWORD="test-pro")
+          os.environ.update(NVIDIA_API_KEY="fake-1",SOLUNE_PRO_PASSWORD="test-pro")
           import app
           c=TestClient(app.app)
-          assert c.get("/health").json()["configured_keys"]==2
+          assert c.get("/health").json()["configured_keys"]==1
           session=c.post("/v1/session").json()
           h={"Authorization":"Bearer "+session["token"]}
           q={"model":"opal","messages":[{"role":"user","content":"hello"}],"max_tokens":32}
@@ -56,9 +56,9 @@ jobs:
                   yield b'data: {"choices":[{"delta":{"content":"hello"}}]}'
                   yield b'data: {"usage":{"total_tokens":42}}'
                   yield b'data: [DONE]'
-          with patch("app.requests.post",side_effect=[Reply(401),Reply(200)]) as p:
+          with patch("app.requests.post",return_value=Reply(200)) as p:
               r=c.post("/v1/chat/completions",json=q,headers=h)
-              assert r.status_code==200 and "[DONE]" in r.text and "hello" in r.text and p.call_count==2
+              assert r.status_code==200 and "[DONE]" in r.text and "hello" in r.text and p.call_count==1
           with patch("app.requests.post",return_value=Reply(429)) as p:
               r=c.post("/v1/chat/completions",json=q,headers=h)
               assert r.status_code==429 and p.call_count==1
@@ -82,10 +82,10 @@ jobs:
           with patch("app.requests.post",side_effect=[Complete("Draft answer"),Complete("Verified answer")]) as p:
               r=c.post("/v1/chat/completions",json=request("opal","deep"),headers=hp)
               assert "Verified answer" in r.text and "Reviewing reasoning" in r.text and p.call_count==2
-          with patch("app.requests.post",side_effect=[Complete("Evidence https://example.org"),Complete("Final https://example.org")]) as p:
+          with patch("app.search_public",return_value="Evidence https://example.org"), patch("app.requests.post",side_effect=[Complete("Draft https://example.org"),Complete("Final https://example.org")]) as p:
               r=c.post("/v1/chat/completions",json=request("marble","research"),headers=hp)
               assert "Final https://example.org" in r.text
-              assert p.call_args_list[0].kwargs["json"]["tools"]==[{"type":"browser_search"}]
+              assert p.call_args_list[0].kwargs["json"]["model"]==app.MODELS["marble"]
               assert p.call_args_list[1].kwargs["json"]["model"]==app.MODELS["marble"]
           svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30"/></svg>'
           with patch("app.requests.post",side_effect=[Complete(svg),Complete(svg)]) as p:
@@ -99,5 +99,9 @@ jobs:
           with patch("app.requests.post",side_effect=[Truncated(200),Complete(" continuation")]) as p:
               r=c.post("/v1/chat/completions",json=request("opal","code"),headers=hp)
               assert "partial" in r.text and "continuation" in r.text and p.call_count==2
+              assert p.call_args_list[0].kwargs["json"]["model"]==app.CODE_MODEL
+          with patch("app.requests.post",side_effect=[Complete("draft"),Complete("reviewed")]) as p:
+              r=c.post("/v1/chat/completions",json={**request("marble","code"),"skills":["code","deep"]},headers=hp)
+              assert "reviewed" in r.text and p.call_count==2
           print("Gateway mock tests passed")
           PY
