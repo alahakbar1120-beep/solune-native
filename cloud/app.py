@@ -59,7 +59,7 @@ class Chat(BaseModel):
 def index():
     return FileResponse(Path(__file__).with_name("index.html"),headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"})
 @app.get("/health")
-def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"version":"2.4"}
+def health(): return {"ok":True,"configured_keys":sum(bool(k) for k in KEYS),"version":"2.5"}
 @app.get("/v1/models")
 def profiles():
     return {"object":"list","data":[{"id":PROFILE_IDS[k],"name":name,"object":"model","kind":"assistant_profile"} for k,name in PROFILE_NAMES.items()]}
