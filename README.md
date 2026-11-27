@@ -1,4 +1,4 @@
-# SoluneAI 2.8
+# SoluneAI 2.9
 
 Android and browser AI chat with a shared English interface, local chat history, coding workspaces, and sandboxed HTML/SVG artifacts. Cloud is the default. Solune is an assistant product using third-party models, not independently trained weights.
 
@@ -10,7 +10,7 @@ Android and browser AI chat with a shared English interface, local chat history,
 | Solune Onyx 3.5 | MiniMax M3.1 Flash, Code Studio exclusive, Pro and Dev |
 
 ## APK
-Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads SoluneAI-2.8-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
+Use JDK 17, Gradle 8.9, Android SDK 35, build-tools 35.0.0, NDK 27.2.12479018 and CMake 3.22.1. Run gradle :app:assembleDebug. APK output: app/build/outputs/apk/debug/app-debug.apk. GitHub Actions uploads SoluneAI-2.9-debug after signature and ARM64 checks. See AGENTS.md for the build and acceptance checklist.
 
 ## Cloud
 Railway serves the API and shared UI at https://solune-cloud-production.up.railway.app. Set NVIDIA_API_KEY and plan passwords in Railway Variables. No HF_TOKEN required. Verify live generation before release.
@@ -20,3 +20,8 @@ Cloud mappings are in cloud/app.py. Local models: SmolLM2-360M-Instruct, Qwen2.5
 
 ## Limitations
 Cloud quotas are shared across profiles per signed session identity: Free 100,000 tokens, Pro 300,000, Dev no app token cap per 24-hour window from first request. SQLite stores lifetime usage and the signing key when a persistent data volume is mounted. Upstream limits still apply. Cloud accounts have a server-generated recovery code. Save it outside the app and restore the same account after reinstalling. Usage and plan are tied to that account. Creating a separate account creates a separate identity; lifetime statistics start with the current database, not historical usage. No email-based recovery. Observed provider quota headers are not aggregate account balances. No failover on quota exhaustion. SVG is vector generation, not raster image generation. External resources are disabled in HTML previews. Local engine and Android background behavior require device testing; cloud generation may stop if Android kills the app. Do not claim successful APK build or deployment without CI evidence.
+
+
+### Background generation
+
+Once the server accepts a generation job, closing the app or losing connectivity does not cancel it. Reopen the same account and chat to recover its result. Server restarts can interrupt in-flight jobs. Completed jobs are retained for up to seven days (cleanup occurs on new submissions). Work plans describe public task stages, not hidden reasoning. Extra planning/review calls consume tokens.
