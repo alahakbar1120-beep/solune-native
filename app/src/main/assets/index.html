@@ -307,7 +307,7 @@ body.theme-light .toast{background:#292622;color:white}
 .studio-panel{display:flex;flex-direction:column;gap:10px;padding:2px 0 18px;min-width:0;min-height:0}.studio-file-tabs{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding:3px 0}.studio-file-tab{display:flex;gap:6px;align-items:center;flex-shrink:0;min-height:38px;padding:0 10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--muted);font:12px ui-monospace,monospace}.studio-file-tab .ico{width:14px}.studio-file-tab.active{border-color:var(--accent);color:var(--accent)}
 .studio-file-toolbar{display:flex;align-items:center;gap:8px;min-height:42px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:3px 8px}.studio-file-toolbar>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px ui-monospace,monospace}.studio-editor{box-sizing:border-box;display:block;width:100%;min-height:340px;height:48dvh;resize:vertical;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:14px;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2;outline:none;white-space:pre;overflow:auto}.studio-editor:focus{border-color:var(--accent)}.studio-editor-meta{font:11px ui-monospace,monospace;color:var(--muted);padding:0 4px}.studio-actions{display:flex;gap:8px}.studio-actions>*{flex:1}.studio-actions button{min-height:48px}
 .studio-empty{display:grid;place-items:center;gap:10px;text-align:center;min-height:210px;border:1px dashed var(--line);border-radius:14px;color:var(--muted)}.studio-empty .ico{width:34px;height:34px;color:var(--accent)}.studio-empty b{color:var(--text)}.studio-empty small{max-width:240px;font-size:12px}.studio-frame{width:100%;height:59dvh;min-height:320px;border:1px solid var(--line);border-radius:12px;background:white}.studio-select{min-width:0;flex:1;background:var(--panel);color:var(--text);border:0;font:13px ui-monospace,monospace;padding:10px}.studio-banner{padding:20px 14px 8px;display:grid;gap:8px}.studio-banner h2{margin:0;font:700 26px system-ui}.studio-mark{display:grid;place-items:center;width:48px;height:48px;border:1px solid var(--line);border-radius:14px;color:var(--accent);background:var(--panel)}.studio-mark .ico{width:26px;height:26px}.studio-mode .workspace-files{border-radius:10px}.studio-mode .code-card{border-radius:10px}
-@media(prefers-reduced-motion:reduce){.studio-tab{transition:none}}.keyboard-open .bottom-nav-wrap{display:none!important}.depth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.depth-grid .seg-btn{min-height:58px}.thinking:not(.done) .spinner i{opacity:1;animation:soluneWave 1.2s ease-in-out infinite}@keyframes soluneWave{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}.thinking:not(.done) .spinner i:nth-child(2){animation-delay:.16s}.thinking:not(.done) .spinner i:nth-child(3){animation-delay:.32s}.stream-enter{animation:soluneSmooth .24s ease-out both}@keyframes soluneSmooth{from{transform:translateY(3px)}to{transform:translateY(0)}}.fresh-message .user-bubble{animation:soluneSlide .28s cubic-bezier(.16,1,.3,1) both}@keyframes soluneSlide{from{transform:translateY(16px) scale(.98)}to{transform:none}}@media(prefers-reduced-motion:reduce){.stream-enter,.fresh-message .user-bubble,.thinking .spinner i{animation:none!important}}</style>
+@media(prefers-reduced-motion:reduce){.studio-tab{transition:none}}.keyboard-open .bottom-nav-wrap{display:none!important}.depth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.depth-grid .seg-btn{min-height:58px}.thinking:not(.done) .spinner i{opacity:1;animation:soluneWave 1.2s ease-in-out infinite}@keyframes soluneWave{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}.thinking:not(.done) .spinner i:nth-child(2){animation-delay:.16s}.thinking:not(.done) .spinner i:nth-child(3){animation-delay:.32s}.stream-enter{animation:soluneSmooth .24s ease-out both}@keyframes soluneSmooth{from{transform:translateY(3px)}to{transform:translateY(0)}}.fresh-message .user-bubble{animation:soluneSlide .28s cubic-bezier(.16,1,.3,1) both}@keyframes soluneSlide{from{transform:translateY(16px) scale(.98)}to{transform:none}}@media(prefers-reduced-motion:reduce){.stream-enter,.fresh-message .user-bubble,.thinking .spinner i{animation:none!important}}.artifact-actions{display:flex;flex-direction:column;gap:6px;margin:8px 0}.artifact-actions[hidden]{display:none!important}.artifact-source{white-space:pre;overflow:auto;font:13px/1.6 ui-monospace,monospace;background:var(--panel);padding:14px;border-radius:12px}.artifact-open{margin:8px;width:calc(100% - 16px)}.sheet.artifact-fullscreen{width:100%!important;height:100dvh!important;max-height:100dvh!important;left:0!important;right:0!important;top:0!important;bottom:0!important;transform:none!important;border-radius:0!important}.artifact-fullscreen .studio-frame{height:72dvh}</style>
 
 <style>
 .model-option .model-state{transition:color .22s,opacity .22s}.model-option.selected .model-state{color:var(--accent)}.sheet.open .option,.sheet.open .settings-card{animation:solune-enter .27s cubic-bezier(.2,.8,.2,1) both}.sheet.open .option:nth-child(2){animation-delay:25ms}.sheet.open .option:nth-child(3){animation-delay:45ms}.sheet.open .option:nth-child(4){animation-delay:60ms}.image-card,.code-card{animation:solune-enter .25s ease-out both}.thinking:not(.done){transition:opacity .2s}.model-option:active,.plan-action:active{transform:scale(.98)}.theme-card:focus-visible,.actionbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@keyframes solune-enter{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
@@ -492,7 +492,7 @@ try {
         if (!['local','api','demo','cloud'].includes(mode)) mode='cloud';
         if(!window.SoluneNative&&mode==='local')mode='cloud';
         const cloudBase=location.hostname==='solune-cloud-production.up.railway.app'?'':'https://solune-cloud-production.up.railway.app';
-        let cloudToken='',cloudUsage=null;
+        let cloudToken='',cloudUsage=null,accountLinked=false;
         try{cloudToken=localStorage.getItem('solune-cloud-session')||sessionStorage.getItem('solune-cloud-session')||'';}catch(e){}
         const cloudHeaders=()=>Object.assign({'Content-Type':'application/json'},cloudToken?{Authorization:'Bearer '+cloudToken}:{});
         async function cloudJSON(path,options={}){const r=await fetch(cloudBase+path,Object.assign({headers:cloudHeaders()},options));let data;try{data=await r.json();}catch(e){throw Error('Cloud service unavailable. Try again later.');}if(!r.ok){if(r.status===401)setCloudPlan('free','');throw Error(typeof data.detail==='string'?data.detail:'Server error '+r.status);}return data;}
@@ -500,9 +500,10 @@ try {
         let cloudSync=null;
         async function syncCloudPlan(){
             if(cloudSync)return cloudSync;
-            cloudSync=(async()=>{try{let session;try{session=await cloudJSON('/v1/session',{method:'POST'});}catch(e){if(cloudToken)throw e;session=await cloudJSON('/v1/session',{method:'POST'});}setCloudPlan(session.plan,session.token);cloudUsage=await cloudJSON('/v1/usage');}catch(e){if(!cloudToken)setCloudPlan('free','');}finally{cloudSync=null;}})();
+            cloudSync=(async()=>{try{let session;try{session=await cloudJSON('/v1/session',{method:'POST'});}catch(e){if(cloudToken)throw e;session=await cloudJSON('/v1/session',{method:'POST'});}setCloudPlan(session.plan,session.token);cloudUsage=await cloudJSON('/v1/usage');accountLinked=!!cloudUsage.account_linked;}catch(e){if(!cloudToken)setCloudPlan('free','');}finally{cloudSync=null;}})();
             return cloudSync;
         }
+        function openAccount(){openSheet('Cloud account',body=>{body.append(newEl('p','helper','Your plan and usage are stored on the server. Save your recovery code outside the app to restore the same account after reinstalling.'));const recovery=read('solune-recovery','');if(accountLinked){body.append(newEl('h3','','Account linked'));if(recovery){const field=document.createElement('textarea');field.value=recovery;field.readOnly=true;field.rows=3;body.append(field);const copyBtn=newEl('button','card-btn','Copy recovery code');copyBtn.onclick=()=>copy(recovery);body.append(copyBtn);}else body.append(newEl('p','helper','Keep the recovery code you saved when creating this account.'));}const input=document.createElement('input');input.type='password';input.autocomplete='off';input.placeholder='Recovery code';body.append(input);const restore=newEl('button','card-btn','Restore account');restore.onclick=async()=>{restore.disabled=true;try{const d=await cloudJSON('/v1/account/restore',{method:'POST',body:JSON.stringify({recovery_code:input.value.trim()})});save('solune-recovery',input.value.trim());setCloudPlan(d.plan,d.token);accountLinked=true;await syncCloudPlan();openAccount();toast('Account restored');}catch(e){toast(e.message);restore.disabled=false;}};body.append(restore);if(!accountLinked){const create=newEl('button','card-btn primary','Create account');create.onclick=async()=>{create.disabled=true;try{const d=await cloudJSON('/v1/account/create',{method:'POST'});save('solune-recovery',d.recovery_code);setCloudPlan(d.plan,d.token);accountLinked=true;await syncCloudPlan();openAccount();}catch(e){toast(e.message);create.disabled=false;}};body.append(create);}});}
         let settings = Object.assign({ theme: read('marble15-theme', 'dark'), haptic: true, compact: false, reducedMotion: false, fullChat: false, font: 'default', keepAwake: false, notifyDone: false, language: 'auto' }, read('marble15-settings', {}));
         let api = read('marble15-api', { url: '', model: '' });
         let draft = read('marble15-draft', '');
@@ -577,9 +578,9 @@ try {
         function haptic() { if (settings.haptic && navigator.vibrate)
             navigator.vibrate(12); }
         function setDrawer(open) { $('drawer').classList.toggle('open', open); $('drawer').inert = !open; $('drawerScrim').classList.toggle('open', open && innerWidth < 940); $('menuBtn').setAttribute('aria-expanded', String(open)); }
-        function openSheet(title, build) { hideSkills(); $('sheet').classList.toggle('settings-page', ['Settings', 'Plans', 'Usage'].includes(title)); $('sheet').inert = false; $('sheetTitle').textContent = title; const body = $('sheetBody'); body.replaceChildren(); if (build)
+        function openSheet(title, build) { $('sheet').classList.remove('artifact-fullscreen');hideSkills(); $('sheet').classList.toggle('settings-page', ['Settings', 'Plans', 'Usage'].includes(title)); $('sheet').inert = false; $('sheetTitle').textContent = title; const body = $('sheetBody'); body.replaceChildren(); if (build)
             build(body); $('overlay').classList.add('open'); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false'); haptic(); }
-        function closeSheet() { const frame=$('sheetBody').querySelector('.html-preview');if(frame)frame.remove(); $('overlay').classList.remove('open'); $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); $('sheet').inert = true; }
+        function closeSheet() { $('sheet').classList.remove('artifact-fullscreen');const frame=$('sheetBody').querySelector('.html-preview');if(frame)frame.remove(); $('overlay').classList.remove('open'); $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); $('sheet').inert = true; }
         function togglePreview(src,label='Preview'){const img=$('previewImage');img.onerror=()=>toast('Could not display image');img.src=src;$('previewLabel').textContent=label;$('previewModal').classList.add('open');}
         function closePreview() { $('previewModal').classList.remove('open');$('previewImage').removeAttribute('src'); }
         function newEl(tag, cls, html) { const n = document.createElement(tag); if (cls)
@@ -686,8 +687,8 @@ try {
             let expanded=false,manual=false,last='',lastLive=null,svg=null,svgCard=null;
             const preview=action('play','Preview HTML',()=>openHtmlPreview(code));
             const svgPreview=action('image','Preview SVG',()=>{const currentSvg=getSVG(code);if(currentSvg)togglePreview(svgEncode(currentSvg),'SVG');else toast('SVG is not complete yet');});
-            tools.append(action('copy','Copy',()=>copy(code)),action('download','Download file',()=>download(code,name,ext==='html'?'text/html':ext==='svg'?'image/svg+xml':'text/plain')),preview,svgPreview);
-            top.append(label,tools);box.append(top,pre,more);
+            const artifact=action('more','Artifact options',()=>openArtifact(name,kind,code));tools.append(preview,svgPreview,artifact);
+            top.append(label,tools);const open=newEl('button','card-btn artifact-open','Open artifact');open.onclick=()=>openArtifact(name,kind,code);box.append(top,pre,more,open);
             more.onclick=()=>{if(job)job.readingCode=true;manual=true;expanded=!expanded;pre.classList.toggle('code-collapsed',!expanded);more.textContent=expanded?'Collapse code':'Show full code';};
             box.updateCode=(next,isLive)=>{
                 if(next===last&&isLive===lastLive)return;
@@ -1039,6 +1040,20 @@ try {
             return; const idx = current.messages.indexOf(m); if (idx < 1)
             return; const prev = current.messages[idx - 1]; if (prev.role !== 'user')
             return; const fork = { id: Date.now(), title: current.title + ' · branch', kind:current.kind, messages: current.messages.slice(0, idx - 1) }; chats.unshift(fork); current = fork; $('prompt').value = prev.content; task = prev.task || 'chat'; skill = prev.skill || '';selectedSkills=prev.skills||[]; resizePrompt(); view = fork.kind==='code'?'code':'chat';codeOpen=fork.kind==='code'; render(); send(); }
+        function openArtifact(name,kind,source){
+            openSheet(name,body=>{
+                const panel=newEl('div','artifact-panel'),bar=newEl('div','studio-file-toolbar'),menu=newEl('button','studio-icon',icon('more'));menu.title='Artifact options';
+                const options=newEl('div','artifact-actions');options.hidden=true;menu.onclick=()=>{options.hidden=!options.hidden;};bar.append(newEl('span','',esc(name)),menu);
+                const full=newEl('button','card-btn','Full screen');full.onclick=()=>{$('sheet').classList.toggle('artifact-fullscreen');options.hidden=true;};
+                const cp=newEl('button','card-btn','Copy code');cp.onclick=()=>copy(source);
+                const dl=newEl('button','card-btn','Download file');dl.onclick=()=>download(source,name,kind==='html'?'text/html':kind==='svg'?'image/svg+xml':'text/plain');options.append(cp,dl,full);
+                panel.append(bar,options);
+                if(kind==='html'||/\.html?$/i.test(name)){const frame=document.createElement('iframe');frame.className='studio-frame';frame.title='Sandboxed artifact';frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; img-src data: blob:; font-src data:; connect-src \'none\'; form-action \'none\'; base-uri \'none\'; object-src \'none\'; frame-src \'none\';">'+source;panel.append(frame);}
+                else if(kind==='svg'&&getSVG(source))panel.append(imageCard(getSVG(source)));
+                else {const pre=newEl('pre','artifact-source');pre.innerHTML=codeHighlight(source);panel.append(pre);}
+                body.append(panel);
+            });
+        }
         function openHtmlPreview(html){
             openSheet('Preview HTML',body=>{
                 const bar=newEl('div','preview-toolbar'),f=document.createElement('iframe');f.className='html-preview';f.title='Sandboxed HTML';f.setAttribute('sandbox','allow-scripts');f.referrerPolicy='no-referrer';
@@ -1104,7 +1119,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             if(!r.ok){let d={};try{d=await r.json()}catch(e){};if(r.status===401)setCloudPlan('free','');throw Error(typeof d.detail==='string'?d.detail:'Cloud error '+r.status);}
             if(!r.body)throw Error('Response stream unavailable');
             const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',text='',finished=false,truncated=false;
-            function consume(line){if(!line.startsWith('data:'))return;const x=line.slice(5).trim();if(x==='[DONE]'){finished=true;return;}let o;try{o=JSON.parse(x)}catch(e){return;}if(o.error)throw Error(o.error);if(o.stage){if(job)job.stage=o.stage;const wrap=job&&messageNodes.get(job.message);const th=wrap&&wrap.querySelector('.thinking .dots');if(th)th.textContent=o.stage;}if(o.truncated)truncated=true;const delta=o.choices&&o.choices[0]&&o.choices[0].delta;if(delta&&delta.content){text+=delta.content;job.text=text;refresh();}}
+            function consume(line){if(!line.startsWith('data:'))return;const x=line.slice(5).trim();if(x==='[DONE]'){finished=true;return;}let o;try{o=JSON.parse(x)}catch(e){return;}if(o.error){if(o.status===428)accountLinked=false;throw Error(o.error);}if(o.stage){if(job)job.stage=o.stage;const wrap=job&&messageNodes.get(job.message);const th=wrap&&wrap.querySelector('.thinking .dots');if(th)th.textContent=o.stage;}if(o.truncated)truncated=true;const delta=o.choices&&o.choices[0]&&o.choices[0].delta;if(delta&&delta.content){text+=delta.content;job.text=text;refresh();}}
             try{while(true){let chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});let lines=buf.split('\n');buf=lines.pop();for(const line of lines)consume(line);}buf+=decoder.decode();if(buf)consume(buf);if(!finished)throw Error('Response stream interrupted');if(truncated){toast('Response length limit reached — use Continue to finish');if(job)job.truncated=true;}return text;}finally{reader.releaseLock();}
         }
         function killWorker() { if (worker) {
@@ -1245,7 +1260,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 p.onclick = openPlans;
                 let u = newEl('button', 'option', icon('info') + '<div class="meta"><b>Usage</b><small>Usage details</small></div>' + icon('chevron'));
                 u.onclick = openUsage;
-                wrap.append(p, u, themeCard, langCard, fontCard);
+                const account=newEl('button','option',icon('info')+'<div class="meta"><b>Cloud account</b><small>Restore plan and usage</small></div>'+icon('chevron'));account.onclick=openAccount;wrap.append(account,p,u,themeCard,langCard,fontCard);
                 body.append(wrap);
                 persist();
             });
@@ -1268,6 +1283,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             });
         }
         function openCloudPlans(){
+            if(!accountLinked){openAccount();return;}
             openSheet('Plans',body=>{
                 body.append(newEl('p','helper','One shared 24-hour token allowance across all models. Pro and Dev require a password.'));
                 for(const [p,f] of [['free','100K tokens'],['pro','300K tokens'],['dev','No plan cap']]){
@@ -1487,7 +1503,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
             const continuation=arg&&arg.role==='assistant'?arg:null;
             if(continuation&&(busy||!current||current.messages.at(-1)!==continuation))return;
             if(busy){if(job&&current===job.owner)stop();else toast('A response is running in another chat. Open it to stop generation.');return;}
-            if(mode==='cloud'&&cloudSync)await cloudSync;
+            if(mode==='cloud'){if(cloudSync)await cloudSync;else if(!accountLinked)await syncCloudPlan();if(!accountLinked){openAccount();return;}}
             if(busy)return;
             let q=continuation?(current.messages.filter(m=>m.role==='user').at(-1)?.content||'Continue'): $('prompt').value.trim();
             if(!continuation&&(!validPrompt()||!q))
@@ -1613,7 +1629,7 @@ function reset(){pause();n=0;time.textContent='0.0'}
                 let thread = $('feed').querySelector('.thread');
                 if(conversationView()&&current===owner&&thread){finishMessage(assistantMsg);const workspace=thread.querySelector('.workspace-summary');if(workspace)workspace.replaceWith(codingFiles(owner));updateControls();renderHistory();}else{updateControls();renderHistory();if(view==='code'&&codeOpen&&current===owner&&studioTab!=='chat'){const panel=$('feed').querySelector('.studio-panel');if(panel){if(panel.contains(document.activeElement)&&document.activeElement.classList.contains('studio-editor')){const hint=newEl('button','card-btn studio-refresh','Updated files available');hint.onclick=()=>render();panel.prepend(hint);}else panel.replaceWith(studioTab==='files'?studioFileView(owner):studioPreviewView(owner));}}}
                 if(!readingCode&&current===owner&&conversationView())scrollToBottom(true);
-                if(mode==='cloud')cloudJSON('/v1/usage').then(d=>{cloudUsage=d;}).catch(()=>{});if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openCloudUsage();}
+                if(mode==='cloud')cloudJSON('/v1/usage').then(d=>{cloudUsage=d;}).catch(()=>{});if(error&&current===owner&&error!=='Generation stopped.') {toast(error);if(error==='Plan limit reached.')openCloudUsage();if(error.includes('Create or restore an account'))openAccount();}
             }
         }
         let ownScroll=null,lastScroll=0;
